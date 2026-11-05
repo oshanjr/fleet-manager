@@ -1,0 +1,125 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  FLEET_MANAGER
+  DISPATCH_SUPERVISOR
+}
+
+enum CrewRole {
+  DRIVER
+  CONDUCTOR
+}
+
+model User {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([role])
+}
+
+model BusVehicle {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  registrationNumber String   @unique
+  routeName          String
+  seatingCapacity    Int
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  dailyRouteLogs        DailyRouteLog[]
+  maintenanceLogs       BusMaintenanceLog[]
+  crewAttendancePayroll CrewAttendancePayroll[]
+
+  @@index([isActive])
+}
+
+model DailyRouteLog {
+  id                  String   @id @default(auto()) @map("_id") @db.ObjectId
+  date                DateTime
+  busId               String   @db.ObjectId
+  routeName           String
+  morningCollection   Float
+  eveningCollection   Float
+  fuelCost            Float
+  tollAndLineFees     Float
+  conductorCommission Float
+  driverCommission    Float
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  bus BusVehicle @relation(fields: [busId], references: [id], onDelete: Restrict)
+
+  @@unique([busId, date])
+  @@index([date])
+}
+
+model BusMaintenanceLog {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  date        DateTime
+  busId       String   @db.ObjectId
+  serviceType String
+  cost        Float
+  vendorName  String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bus BusVehicle @relation(fields: [busId], references: [id], onDelete: Restrict)
+
+  @@index([busId])
+  @@index([date])
+}
+
+model CrewAttendancePayroll {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  date         DateTime
+  employeeName String
+  role         CrewRole
+  dailyWage    Float
+  advanceTaken Float    @default(0)
+  balanceOwed  Float    @default(0)
+  busId        String?  @db.ObjectId
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bus BusVehicle? @relation(fields: [busId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([busId])
+}
+
+model CrewRate {
+  id                String   @id @default(auto()) @map("_id") @db.ObjectId
+  role              CrewRole @unique
+  baseDailyWage     Float
+  commissionPercent Float
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model DailyFleetSummary {
+  id                   String    @id @default(auto()) @map("_id") @db.ObjectId
+  date                 DateTime  @unique
+  totalCollection      Float
+  totalFuelExpense     Float
+  totalTollAndLineFees Float
+  totalMaintenanceCost Float
+  totalCrewPay         Float
+  netProfit            Float
+  isSyncedWithHub      Boolean   @default(false)
+  syncedAt             DateTime?
+  lastSyncError        String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}

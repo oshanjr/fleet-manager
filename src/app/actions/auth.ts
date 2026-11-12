@@ -111,46 +111,46 @@ export async function seedInitialDataAction(): Promise<ActionResult<string>> {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // Create Route logs
+      // Create Route logs in LKR
       await prisma.dailyRouteLog.createMany({
         data: [
           {
             busId: b1.id,
             date: today,
             routeName: b1.routeName,
-            morningCollection: 480.0,
-            eveningCollection: 540.0,
-            fuelCost: 195.0,
-            tollAndLineFees: 40.0,
-            conductorCommission: 40.0,
-            driverCommission: 45.0,
+            morningCollection: 48000.0,
+            eveningCollection: 54000.0,
+            fuelCost: 22500.0,
+            tollAndLineFees: 1200.0,
+            conductorCommission: 4080.0,
+            driverCommission: 5100.0,
           },
           {
             busId: b2.id,
             date: today,
             routeName: b2.routeName,
-            morningCollection: 390.0,
-            eveningCollection: 430.0,
-            fuelCost: 160.0,
-            tollAndLineFees: 25.0,
-            conductorCommission: 32.0,
-            driverCommission: 36.0,
+            morningCollection: 39000.0,
+            eveningCollection: 43000.0,
+            fuelCost: 18500.0,
+            tollAndLineFees: 800.0,
+            conductorCommission: 3280.0,
+            driverCommission: 4100.0,
           },
         ],
       });
 
-      // Create Maintenance
+      // Create Maintenance in LKR
       await prisma.busMaintenanceLog.create({
         data: {
           busId: b3.id,
           date: today,
           serviceType: "Brake Pad Replacement & Hydraulic Check",
-          cost: 340.0,
+          cost: 34500.0,
           vendorName: "Apex Auto Engineering",
         },
       });
 
-      // Create Crew payroll
+      // Create Crew payroll in LKR
       await prisma.crewAttendancePayroll.createMany({
         data: [
           {
@@ -158,18 +158,18 @@ export async function seedInitialDataAction(): Promise<ActionResult<string>> {
             role: "DRIVER",
             busId: b1.id,
             date: today,
-            dailyWage: 65.0,
-            advanceTaken: 20.0,
-            balanceOwed: 45.0,
+            dailyWage: 3500.0,
+            advanceTaken: 1000.0,
+            balanceOwed: 2500.0,
           },
           {
             employeeName: "Sunil Silva",
             role: "CONDUCTOR",
             busId: b1.id,
             date: today,
-            dailyWage: 50.0,
-            advanceTaken: 10.0,
-            balanceOwed: 40.0,
+            dailyWage: 2800.0,
+            advanceTaken: 500.0,
+            balanceOwed: 2300.0,
           },
         ],
       });

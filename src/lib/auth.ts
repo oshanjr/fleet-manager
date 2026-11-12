@@ -107,7 +107,7 @@ export async function ensureDefaultUsers() {
       });
     }
 
-    // Also ensure initial crew rates
+    // Also ensure initial crew rates in LKR
     const driverRate = await prisma.crewRate.findUnique({
       where: { role: "DRIVER" },
     });
@@ -115,7 +115,7 @@ export async function ensureDefaultUsers() {
       await prisma.crewRate.create({
         data: {
           role: "DRIVER",
-          baseDailyWage: 65.0,
+          baseDailyWage: 3500.0,
           commissionPercent: 5.0,
         },
       });
@@ -128,7 +128,7 @@ export async function ensureDefaultUsers() {
       await prisma.crewRate.create({
         data: {
           role: "CONDUCTOR",
-          baseDailyWage: 50.0,
+          baseDailyWage: 2800.0,
           commissionPercent: 4.0,
         },
       });

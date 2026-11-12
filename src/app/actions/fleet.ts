@@ -1,46 +1,180 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 import { ActionResult } from "@/types";
 import { revalidatePath } from "next/cache";
+import { dayStr, toDayDate, toOptionalDayDate, todayLK } from "@/lib/dates";
 
+// ============================================================================
+// AUTH GUARDS — every server action is a public HTTP endpoint, so each one
+// must verify the session itself.
+// ============================================================================
+async function requireUser() {
+  const user = await getSessionUser();
+  if (!user) throw new Error("Not authenticated. Please sign in again.");
+  return user;
+}
+
+async function requireManager() {
+  const user = await requireUser();
+  if (user.role !== "FLEET_MANAGER") {
+    throw new Error("Only a Fleet Manager can perform this action.");
+  }
+  return user;
+}
+
+function fail(error: unknown): { success: false; error: string } {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (msg.includes("Unique constraint") || msg.includes("unique constraint")) {
+    return { success: false, error: "A record with the same unique value already exists." };
+  }
+  return { success: false, error: msg };
+}
+
+const num = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const optNum = (v: unknown) => {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+const optStr = (v: unknown) => {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s.length ? s : null;
+};
+
+// ============================================================================
+// SETTINGS (commission rates, base wages, maintenance budget)
+// ============================================================================
+const DEFAULT_SETTINGS = {
+  driverCommissionPct: 5,
+  conductorCommissionPct: 4,
+  driverBaseWage: 3500,
+  conductorBaseWage: 2800,
+  maintenanceBudget: 250000,
+  monthlyRevenueTarget: 0,
+};
+
+export type FleetSettings = typeof DEFAULT_SETTINGS;
+
+async function loadSettings(): Promise<FleetSettings> {
+  const [rates, rows] = await Promise.all([
+    prisma.crewRate.findMany(),
+    prisma.appSetting.findMany({
+      where: { key: { in: ["maintenanceBudget", "monthlyRevenueTarget"] } },
+    }),
+  ]);
+  const s = { ...DEFAULT_SETTINGS };
+  for (const r of rates) {
+    if (r.role === "DRIVER") {
+      s.driverCommissionPct = r.commissionPercent;
+      s.driverBaseWage = r.baseDailyWage;
+    } else {
+      s.conductorCommissionPct = r.commissionPercent;
+      s.conductorBaseWage = r.baseDailyWage;
+    }
+  }
+  for (const row of rows) {
+    const v = Number(row.value);
+    if (Number.isFinite(v)) (s as any)[row.key] = v;
+  }
+  return s;
+}
+
+export async function updateSettingsAction(
+  input: Partial<FleetSettings>
+): Promise<ActionResult<FleetSettings>> {
+  try {
+    await requireManager();
+    const cur = await loadSettings();
+    const next = { ...cur, ...Object.fromEntries(Object.entries(input).map(([k, v]) => [k, num(v)])) };
+
+    if (next.driverCommissionPct < 0 || next.driverCommissionPct > 50 || next.conductorCommissionPct < 0 || next.conductorCommissionPct > 50) {
+      return { success: false, error: "Commission percentage must be between 0 and 50." };
+    }
+
+    await prisma.$transaction([
+      prisma.crewRate.upsert({
+        where: { role: "DRIVER" },
+        update: { commissionPercent: next.driverCommissionPct, baseDailyWage: next.driverBaseWage },
+        create: { role: "DRIVER", commissionPercent: next.driverCommissionPct, baseDailyWage: next.driverBaseWage },
+      }),
+      prisma.crewRate.upsert({
+        where: { role: "CONDUCTOR" },
+        update: { commissionPercent: next.conductorCommissionPct, baseDailyWage: next.conductorBaseWage },
+        create: { role: "CONDUCTOR", commissionPercent: next.conductorCommissionPct, baseDailyWage: next.conductorBaseWage },
+      }),
+      prisma.appSetting.upsert({
+        where: { key: "maintenanceBudget" },
+        update: { value: String(next.maintenanceBudget) },
+        create: { key: "maintenanceBudget", value: String(next.maintenanceBudget) },
+      }),
+      prisma.appSetting.upsert({
+        where: { key: "monthlyRevenueTarget" },
+        update: { value: String(next.monthlyRevenueTarget) },
+        create: { key: "monthlyRevenueTarget", value: String(next.monthlyRevenueTarget) },
+      }),
+    ]);
+
+    revalidatePath("/");
+    return { success: true, data: next };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+// ============================================================================
+// LOAD EVERYTHING FOR THE DASHBOARD
+// ============================================================================
 export async function getFleetDataAction() {
   try {
-    const [buses, routeLogs, maintenanceRecords, crewRoster, summary] =
+    await requireUser();
+    const [buses, routeLogs, maintenanceRecords, crewRoster, expenses, summary, settings] =
       await Promise.all([
-        prisma.busVehicle.findMany({
-          orderBy: { createdAt: "desc" },
-        }),
+        prisma.busVehicle.findMany({ orderBy: { createdAt: "desc" } }),
         prisma.dailyRouteLog.findMany({
           include: { bus: true },
           orderBy: { date: "desc" },
-          take: 500,
+          take: 3000,
         }),
         prisma.busMaintenanceLog.findMany({
           include: { bus: true },
           orderBy: { date: "desc" },
-          take: 500,
+          take: 2000,
         }),
         prisma.crewAttendancePayroll.findMany({
           include: { bus: true },
           orderBy: { date: "desc" },
-          take: 500,
+          take: 5000,
         }),
-        prisma.dailyFleetSummary.findFirst({
+        prisma.fleetExpense.findMany({
+          include: { bus: true },
           orderBy: { date: "desc" },
+          take: 2000,
         }),
+        prisma.dailyFleetSummary.findFirst({ orderBy: { date: "desc" } }),
+        loadSettings(),
       ]);
 
     return {
-      success: true,
+      success: true as const,
       data: {
+        settings,
         buses: buses.map((b) => ({
           id: b.id,
           regNumber: b.registrationNumber,
           route: b.routeName,
           capacity: b.seatingCapacity,
-          status: b.isActive ? "ACTIVE" : "MAINTENANCE",
+          status: (b.isActive ? "ACTIVE" : "MAINTENANCE") as "ACTIVE" | "MAINTENANCE",
           isActive: b.isActive,
+          insuranceExpiry: dayStr(b.insuranceExpiry),
+          revenueLicenseExpiry: dayStr(b.revenueLicenseExpiry),
+          routePermitExpiry: dayStr(b.routePermitExpiry),
+          emissionTestExpiry: dayStr(b.emissionTestExpiry),
+          fitnessCertExpiry: dayStr(b.fitnessCertExpiry),
         })),
         routeLogs: routeLogs.map((l) => ({
           id: l.id,
@@ -54,7 +188,11 @@ export async function getFleetDataAction() {
           commission: l.conductorCommission + l.driverCommission,
           conductorCommission: l.conductorCommission,
           driverCommission: l.driverCommission,
-          date: l.date.toISOString().split("T")[0],
+          kmRun: l.kmRun ?? 0,
+          fuelLiters: l.fuelLiters ?? 0,
+          otherExpenses: l.otherExpenses ?? 0,
+          notes: l.notes ?? "",
+          date: dayStr(l.date),
         })),
         maintenanceRecords: maintenanceRecords.map((m) => ({
           id: m.id,
@@ -63,7 +201,10 @@ export async function getFleetDataAction() {
           type: m.serviceType,
           vendor: m.vendorName,
           cost: m.cost,
-          date: m.date.toISOString().split("T")[0],
+          odometerKm: m.odometerKm ?? 0,
+          nextServiceDate: dayStr(m.nextServiceDate),
+          notes: m.notes ?? "",
+          date: dayStr(m.date),
           status: "Completed",
         })),
         crewRoster: crewRoster.map((c) => ({
@@ -75,12 +216,22 @@ export async function getFleetDataAction() {
           wage: c.dailyWage,
           advance: c.advanceTaken,
           balance: c.balanceOwed,
-          date: c.date.toISOString().split("T")[0],
+          date: dayStr(c.date),
           present: true,
+        })),
+        expenses: expenses.map((e) => ({
+          id: e.id,
+          date: dayStr(e.date),
+          category: e.category,
+          description: e.description,
+          amount: e.amount,
+          paidTo: e.paidTo ?? "",
+          busId: e.busId,
+          busReg: e.bus ? e.bus.registrationNumber : "",
         })),
         lastSummary: summary
           ? {
-              date: summary.date.toISOString().split("T")[0],
+              date: dayStr(summary.date),
               totalCollection: summary.totalCollection,
               netProfit: summary.netProfit,
               isSyncedWithHub: summary.isSyncedWithHub,
@@ -89,386 +240,446 @@ export async function getFleetDataAction() {
           : null,
       },
     };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Failed to load fleet data:", error);
-    return { success: false, error: error.message };
+    return fail(error);
   }
 }
 
 // ============================================================================
-// BUS VEHICLE ACTIONS (CREATE, UPDATE, DELETE)
+// BUS VEHICLE ACTIONS
 // ============================================================================
-export async function addBusAction(
-  regNumber: string,
-  routeName: string,
-  seatingCapacity: number
-): Promise<ActionResult<any>> {
+export interface BusInput {
+  regNumber: string;
+  routeName: string;
+  seatingCapacity: number;
+  isActive?: boolean;
+  insuranceExpiry?: string;
+  revenueLicenseExpiry?: string;
+  routePermitExpiry?: string;
+  emissionTestExpiry?: string;
+  fitnessCertExpiry?: string;
+}
+
+function busData(input: BusInput) {
+  const reg = (input.regNumber || "").trim().toUpperCase();
+  const route = (input.routeName || "").trim();
+  if (!reg) throw new Error("Registration number is required.");
+  if (!route) throw new Error("Route is required.");
+  const seats = Math.round(num(input.seatingCapacity));
+  if (seats < 1 || seats > 120) throw new Error("Seating capacity must be between 1 and 120.");
+  return {
+    registrationNumber: reg,
+    routeName: route,
+    seatingCapacity: seats,
+    isActive: input.isActive ?? true,
+    insuranceExpiry: toOptionalDayDate(input.insuranceExpiry),
+    revenueLicenseExpiry: toOptionalDayDate(input.revenueLicenseExpiry),
+    routePermitExpiry: toOptionalDayDate(input.routePermitExpiry),
+    emissionTestExpiry: toOptionalDayDate(input.emissionTestExpiry),
+    fitnessCertExpiry: toOptionalDayDate(input.fitnessCertExpiry),
+  };
+}
+
+export async function addBusAction(input: BusInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const bus = await prisma.busVehicle.create({
-      data: {
-        registrationNumber: regNumber.trim().toUpperCase(),
-        routeName: routeName.trim(),
-        seatingCapacity: Number(seatingCapacity),
-        isActive: true,
-      },
-    });
+    await requireUser();
+    const bus = await prisma.busVehicle.create({ data: busData(input) });
     revalidatePath("/");
-    return { success: true, data: bus };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id: bus.id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
-export async function updateBusAction(
-  id: string,
-  regNumber: string,
-  routeName: string,
-  seatingCapacity: number,
-  isActive: boolean
-): Promise<ActionResult<any>> {
+export async function updateBusAction(id: string, input: BusInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const updated = await prisma.busVehicle.update({
-      where: { id },
-      data: {
-        registrationNumber: regNumber.trim().toUpperCase(),
-        routeName: routeName.trim(),
-        seatingCapacity: Number(seatingCapacity),
-        isActive: Boolean(isActive),
-      },
-    });
+    await requireUser();
+    const data = busData(input);
+    await prisma.busVehicle.update({ where: { id }, data });
+    // keep route name on logs in sync for future entries only (historical logs keep their route)
     revalidatePath("/");
-    return { success: true, data: updated };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 export async function deleteBusAction(id: string): Promise<ActionResult<void>> {
   try {
+    await requireManager();
     await prisma.$transaction([
       prisma.dailyRouteLog.deleteMany({ where: { busId: id } }),
       prisma.busMaintenanceLog.deleteMany({ where: { busId: id } }),
-      prisma.crewAttendancePayroll.updateMany({
-        where: { busId: id },
-        data: { busId: null },
-      }),
+      prisma.crewAttendancePayroll.updateMany({ where: { busId: id }, data: { busId: null } }),
+      prisma.fleetExpense.updateMany({ where: { busId: id }, data: { busId: null } }),
       prisma.busVehicle.delete({ where: { id } }),
     ]);
     revalidatePath("/");
     return { success: true, data: undefined };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 // ============================================================================
-// DAILY ROUTE LOG ACTIONS (CREATE, UPDATE, DELETE)
+// DAILY ROUTE LOG ACTIONS
 // ============================================================================
-export async function addRouteLogAction(
-  busId: string,
-  morningCollection: number,
-  eveningCollection: number,
-  fuelCost: number,
-  tollAndLineFees: number,
-  dateStr?: string
-): Promise<ActionResult<any>> {
+export interface RouteLogInput {
+  busId: string;
+  date: string;
+  morningCollection: number;
+  eveningCollection: number;
+  fuelCost: number;
+  tollAndLineFees: number;
+  kmRun?: number | string;
+  fuelLiters?: number | string;
+  otherExpenses?: number | string;
+  notes?: string;
+}
+
+async function routeLogData(input: RouteLogInput) {
+  const bus = await prisma.busVehicle.findUnique({ where: { id: input.busId } });
+  if (!bus) throw new Error("Bus vehicle not found");
+
+  const morning = num(input.morningCollection);
+  const evening = num(input.eveningCollection);
+  const values = [morning, evening, num(input.fuelCost), num(input.tollAndLineFees), num(input.otherExpenses)];
+  if (values.some((v) => v < 0)) throw new Error("Amounts cannot be negative.");
+
+  const settings = await loadSettings();
+  const gross = morning + evening;
+  return {
+    busId: bus.id,
+    routeName: bus.routeName,
+    date: toDayDate(input.date),
+    morningCollection: morning,
+    eveningCollection: evening,
+    fuelCost: num(input.fuelCost),
+    tollAndLineFees: num(input.tollAndLineFees),
+    conductorCommission: Number(((gross * settings.conductorCommissionPct) / 100).toFixed(2)),
+    driverCommission: Number(((gross * settings.driverCommissionPct) / 100).toFixed(2)),
+    kmRun: optNum(input.kmRun),
+    fuelLiters: optNum(input.fuelLiters),
+    otherExpenses: optNum(input.otherExpenses),
+    notes: optStr(input.notes),
+  };
+}
+
+export async function addRouteLogAction(input: RouteLogInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const bus = await prisma.busVehicle.findUnique({ where: { id: busId } });
-    if (!bus) return { success: false, error: "Bus vehicle not found" };
-
-    const targetDate = dateStr ? new Date(dateStr) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    const morning = Number(morningCollection) || 0;
-    const evening = Number(eveningCollection) || 0;
-    const gross = morning + evening;
-
-    const conductorCommission = Number((gross * 0.04).toFixed(2));
-    const driverCommission = Number((gross * 0.05).toFixed(2));
-
-    const log = await prisma.dailyRouteLog.upsert({
-      where: {
-        busId_date: {
-          busId,
-          date: targetDate,
-        },
-      },
-      update: {
-        morningCollection: morning,
-        eveningCollection: evening,
-        fuelCost: Number(fuelCost) || 0,
-        tollAndLineFees: Number(tollAndLineFees) || 0,
-        conductorCommission,
-        driverCommission,
-      },
-      create: {
-        busId,
-        date: targetDate,
-        routeName: bus.routeName,
-        morningCollection: morning,
-        eveningCollection: evening,
-        fuelCost: Number(fuelCost) || 0,
-        tollAndLineFees: Number(tollAndLineFees) || 0,
-        conductorCommission,
-        driverCommission,
-      },
+    await requireUser();
+    const data = await routeLogData(input);
+    const existing = await prisma.dailyRouteLog.findUnique({
+      where: { busId_date: { busId: data.busId, date: data.date } },
     });
-
+    if (existing) {
+      return {
+        success: false,
+        error: `A fare entry already exists for this bus on ${dayStr(data.date)}. Edit the existing entry instead.`,
+      };
+    }
+    const log = await prisma.dailyRouteLog.create({ data });
     revalidatePath("/");
-    return { success: true, data: log };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id: log.id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
-export async function updateRouteLogAction(
-  id: string,
-  busId: string,
-  morningCollection: number,
-  eveningCollection: number,
-  fuelCost: number,
-  tollAndLineFees: number,
-  dateStr: string
-): Promise<ActionResult<any>> {
+export async function updateRouteLogAction(id: string, input: RouteLogInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const bus = await prisma.busVehicle.findUnique({ where: { id: busId } });
-    if (!bus) return { success: false, error: "Bus vehicle not found" };
-
-    const targetDate = new Date(dateStr);
-    targetDate.setHours(0, 0, 0, 0);
-
-    const morning = Number(morningCollection) || 0;
-    const evening = Number(eveningCollection) || 0;
-    const gross = morning + evening;
-    const conductorCommission = Number((gross * 0.04).toFixed(2));
-    const driverCommission = Number((gross * 0.05).toFixed(2));
-
-    const updated = await prisma.dailyRouteLog.update({
-      where: { id },
-      data: {
-        busId,
-        routeName: bus.routeName,
-        date: targetDate,
-        morningCollection: morning,
-        eveningCollection: evening,
-        fuelCost: Number(fuelCost) || 0,
-        tollAndLineFees: Number(tollAndLineFees) || 0,
-        conductorCommission,
-        driverCommission,
-      },
-    });
-
+    await requireUser();
+    const data = await routeLogData(input);
+    await prisma.dailyRouteLog.update({ where: { id }, data });
     revalidatePath("/");
-    return { success: true, data: updated };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 export async function deleteRouteLogAction(id: string): Promise<ActionResult<void>> {
   try {
+    await requireUser();
     await prisma.dailyRouteLog.delete({ where: { id } });
     revalidatePath("/");
     return { success: true, data: undefined };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 // ============================================================================
-// MAINTENANCE ACTIONS (CREATE, UPDATE, DELETE)
+// MAINTENANCE ACTIONS
 // ============================================================================
-export async function addMaintenanceAction(
-  busId: string,
-  serviceType: string,
-  cost: number,
-  vendorName: string,
-  dateStr?: string
-): Promise<ActionResult<any>> {
+export interface MaintenanceInput {
+  busId: string;
+  date: string;
+  serviceType: string;
+  vendorName: string;
+  cost: number;
+  odometerKm?: number | string;
+  nextServiceDate?: string;
+  notes?: string;
+}
+
+function maintenanceData(input: MaintenanceInput) {
+  if (!input.busId) throw new Error("Select a bus.");
+  if (!input.serviceType?.trim()) throw new Error("Service type is required.");
+  const cost = num(input.cost);
+  if (cost < 0) throw new Error("Cost cannot be negative.");
+  return {
+    busId: input.busId,
+    date: toDayDate(input.date),
+    serviceType: input.serviceType.trim(),
+    vendorName: (input.vendorName || "").trim() || "Unspecified",
+    cost,
+    odometerKm: optNum(input.odometerKm),
+    nextServiceDate: toOptionalDayDate(input.nextServiceDate),
+    notes: optStr(input.notes),
+  };
+}
+
+export async function addMaintenanceAction(input: MaintenanceInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const targetDate = dateStr ? new Date(dateStr) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    const maintenance = await prisma.busMaintenanceLog.create({
-      data: {
-        busId,
-        serviceType: serviceType.trim(),
-        cost: Number(cost) || 0,
-        vendorName: vendorName.trim(),
-        date: targetDate,
-      },
-    });
-
+    await requireUser();
+    const m = await prisma.busMaintenanceLog.create({ data: maintenanceData(input) });
     revalidatePath("/");
-    return { success: true, data: maintenance };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id: m.id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
-export async function updateMaintenanceAction(
-  id: string,
-  busId: string,
-  serviceType: string,
-  cost: number,
-  vendorName: string,
-  dateStr: string
-): Promise<ActionResult<any>> {
+export async function updateMaintenanceAction(id: string, input: MaintenanceInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const targetDate = new Date(dateStr);
-    targetDate.setHours(0, 0, 0, 0);
-
-    const updated = await prisma.busMaintenanceLog.update({
-      where: { id },
-      data: {
-        busId,
-        serviceType: serviceType.trim(),
-        cost: Number(cost) || 0,
-        vendorName: vendorName.trim(),
-        date: targetDate,
-      },
-    });
-
+    await requireUser();
+    await prisma.busMaintenanceLog.update({ where: { id }, data: maintenanceData(input) });
     revalidatePath("/");
-    return { success: true, data: updated };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 export async function deleteMaintenanceAction(id: string): Promise<ActionResult<void>> {
   try {
+    await requireUser();
     await prisma.busMaintenanceLog.delete({ where: { id } });
     revalidatePath("/");
     return { success: true, data: undefined };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 // ============================================================================
-// CREW ATTENDANCE & PAYROLL ACTIONS (CREATE, UPDATE, DELETE)
+// CREW ATTENDANCE & PAYROLL ACTIONS
+// Each record = one crew member's attendance for one day.
 // ============================================================================
-export async function addCrewAction(
-  employeeName: string,
-  role: "DRIVER" | "CONDUCTOR",
-  dailyWage: number,
-  advanceTaken: number,
-  busId?: string,
-  dateStr?: string
-): Promise<ActionResult<any>> {
+export interface CrewInput {
+  employeeName: string;
+  role: "DRIVER" | "CONDUCTOR";
+  dailyWage: number;
+  advanceTaken: number;
+  busId?: string;
+  date: string;
+}
+
+function crewData(input: CrewInput) {
+  const name = (input.employeeName || "").trim();
+  if (!name) throw new Error("Employee name is required.");
+  if (input.role !== "DRIVER" && input.role !== "CONDUCTOR") throw new Error("Invalid crew role.");
+  const wage = num(input.dailyWage);
+  const advance = num(input.advanceTaken);
+  if (wage < 0 || advance < 0) throw new Error("Wage and advance cannot be negative.");
+  return {
+    employeeName: name,
+    role: input.role,
+    dailyWage: wage,
+    advanceTaken: advance,
+    balanceOwed: Number((wage - advance).toFixed(2)),
+    busId: input.busId ? input.busId : null,
+    date: toDayDate(input.date),
+  };
+}
+
+export async function addCrewAction(input: CrewInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const targetDate = dateStr ? new Date(dateStr) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    const wage = Number(dailyWage) || 0;
-    const advance = Number(advanceTaken) || 0;
-    const balance = wage - advance;
-
-    const crew = await prisma.crewAttendancePayroll.create({
-      data: {
-        employeeName: employeeName.trim(),
-        role,
-        dailyWage: wage,
-        advanceTaken: advance,
-        balanceOwed: balance,
-        busId: busId ? busId : null,
-        date: targetDate,
-      },
+    await requireUser();
+    const data = crewData(input);
+    const dup = await prisma.crewAttendancePayroll.findFirst({
+      where: { employeeName: data.employeeName, date: data.date },
     });
-
+    if (dup) {
+      return { success: false, error: `${data.employeeName} is already marked for ${dayStr(data.date)}.` };
+    }
+    const crew = await prisma.crewAttendancePayroll.create({ data });
     revalidatePath("/");
-    return { success: true, data: crew };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id: crew.id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
-export async function updateCrewAction(
-  id: string,
-  employeeName: string,
-  role: "DRIVER" | "CONDUCTOR",
-  dailyWage: number,
-  advanceTaken: number,
-  busId?: string,
-  dateStr?: string
-): Promise<ActionResult<any>> {
+export async function updateCrewAction(id: string, input: CrewInput): Promise<ActionResult<{ id: string }>> {
   try {
-    const targetDate = dateStr ? new Date(dateStr) : new Date();
-    targetDate.setHours(0, 0, 0, 0);
-
-    const wage = Number(dailyWage) || 0;
-    const advance = Number(advanceTaken) || 0;
-    const balance = wage - advance;
-
-    const updated = await prisma.crewAttendancePayroll.update({
-      where: { id },
-      data: {
-        employeeName: employeeName.trim(),
-        role,
-        dailyWage: wage,
-        advanceTaken: advance,
-        balanceOwed: balance,
-        busId: busId ? busId : null,
-        date: targetDate,
-      },
-    });
-
+    await requireUser();
+    await prisma.crewAttendancePayroll.update({ where: { id }, data: crewData(input) });
     revalidatePath("/");
-    return { success: true, data: updated };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 export async function deleteCrewAction(id: string): Promise<ActionResult<void>> {
   try {
+    await requireUser();
     await prisma.crewAttendancePayroll.delete({ where: { id } });
     revalidatePath("/");
     return { success: true, data: undefined };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+/**
+ * Copies each crew member's most recent attendance record to the target date
+ * (skips anyone already marked). Saves re-typing the roster every day.
+ */
+export async function copyCrewToDateAction(
+  dateStr: string,
+  names?: string[]
+): Promise<ActionResult<{ created: number }>> {
+  try {
+    await requireUser();
+    const target = toDayDate(dateStr);
+    const all = await prisma.crewAttendancePayroll.findMany({
+      where: { date: { lt: target } },
+      orderBy: { date: "desc" },
+      take: 5000,
+    });
+    const latest = new Map<string, (typeof all)[number]>();
+    for (const r of all) if (!latest.has(r.employeeName)) latest.set(r.employeeName, r);
+
+    const already = await prisma.crewAttendancePayroll.findMany({
+      where: { date: target },
+      select: { employeeName: true },
+    });
+    const skip = new Set(already.map((a) => a.employeeName));
+
+    const rows = [...latest.values()]
+      .filter((r) => !skip.has(r.employeeName))
+      .filter((r) => !names || names.includes(r.employeeName))
+      .map((r) => ({
+        employeeName: r.employeeName,
+        role: r.role,
+        dailyWage: r.dailyWage,
+        advanceTaken: 0,
+        balanceOwed: r.dailyWage,
+        busId: r.busId,
+        date: target,
+      }));
+
+    if (rows.length) await prisma.crewAttendancePayroll.createMany({ data: rows });
+    revalidatePath("/");
+    return { success: true, data: { created: rows.length } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
 // ============================================================================
-// CENTRAL HUB SYNC ACTION
+// GENERAL OPERATING EXPENSES
 // ============================================================================
-export async function syncWithCentralHubAction(): Promise<ActionResult<any>> {
-  try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+export interface ExpenseInput {
+  date: string;
+  category: string;
+  description: string;
+  amount: number;
+  paidTo?: string;
+  busId?: string;
+}
 
-    const [logs, maintenance, crew] = await Promise.all([
-      prisma.dailyRouteLog.findMany({ where: { date: today } }),
-      prisma.busMaintenanceLog.findMany({ where: { date: today } }),
-      prisma.crewAttendancePayroll.findMany({ where: { date: today } }),
+function expenseData(input: ExpenseInput) {
+  if (!input.category?.trim()) throw new Error("Category is required.");
+  if (!input.description?.trim()) throw new Error("Description is required.");
+  const amount = num(input.amount);
+  if (amount <= 0) throw new Error("Amount must be greater than zero.");
+  return {
+    date: toDayDate(input.date),
+    category: input.category.trim(),
+    description: input.description.trim(),
+    amount,
+    paidTo: optStr(input.paidTo),
+    busId: input.busId ? input.busId : null,
+  };
+}
+
+export async function addExpenseAction(input: ExpenseInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireUser();
+    const e = await prisma.fleetExpense.create({ data: expenseData(input) });
+    revalidatePath("/");
+    return { success: true, data: { id: e.id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function updateExpenseAction(id: string, input: ExpenseInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireUser();
+    await prisma.fleetExpense.update({ where: { id }, data: expenseData(input) });
+    revalidatePath("/");
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function deleteExpenseAction(id: string): Promise<ActionResult<void>> {
+  try {
+    await requireUser();
+    await prisma.fleetExpense.delete({ where: { id } });
+    revalidatePath("/");
+    return { success: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+// ============================================================================
+// DAY CLOSE & CENTRAL HUB SYNC
+// ============================================================================
+export async function syncWithCentralHubAction(dateStr?: string): Promise<ActionResult<any>> {
+  try {
+    await requireUser();
+    const day = toDayDate(dateStr || todayLK());
+
+    const [logs, maintenance, crew, expenses] = await Promise.all([
+      prisma.dailyRouteLog.findMany({ where: { date: day } }),
+      prisma.busMaintenanceLog.findMany({ where: { date: day } }),
+      prisma.crewAttendancePayroll.findMany({ where: { date: day } }),
+      prisma.fleetExpense.findMany({ where: { date: day } }),
     ]);
 
-    const totalCollection = logs.reduce(
-      (sum, l) => sum + l.morningCollection + l.eveningCollection,
-      0
-    );
-    const totalFuelExpense = logs.reduce((sum, l) => sum + l.fuelCost, 0);
-    const totalTollAndLineFees = logs.reduce(
-      (sum, l) => sum + l.tollAndLineFees,
-      0
-    );
-    const totalMaintenanceCost = maintenance.reduce(
-      (sum, m) => sum + m.cost,
-      0
-    );
-    const totalCrewPay = crew.reduce((sum, c) => sum + c.dailyWage, 0);
+    const totalCollection = logs.reduce((s, l) => s + l.morningCollection + l.eveningCollection, 0);
+    const totalFuelExpense = logs.reduce((s, l) => s + l.fuelCost, 0);
+    const totalTollAndLineFees = logs.reduce((s, l) => s + l.tollAndLineFees, 0);
+    const totalMaintenanceCost = maintenance.reduce((s, m) => s + m.cost, 0);
+    const commissions = logs.reduce((s, l) => s + l.conductorCommission + l.driverCommission, 0);
+    const totalCrewPay = crew.reduce((s, c) => s + c.dailyWage, 0) + commissions;
+    const otherCosts =
+      logs.reduce((s, l) => s + (l.otherExpenses ?? 0), 0) + expenses.reduce((s, e) => s + e.amount, 0);
 
-    const totalExpenses =
-      totalFuelExpense +
-      totalTollAndLineFees +
-      totalMaintenanceCost +
-      totalCrewPay;
-    const netProfit = totalCollection - totalExpenses;
+    const netProfit =
+      totalCollection - (totalFuelExpense + totalTollAndLineFees + totalMaintenanceCost + totalCrewPay + otherCosts);
 
     const summary = await prisma.dailyFleetSummary.upsert({
-      where: { date: today },
+      where: { date: day },
       update: {
         totalCollection,
         totalFuelExpense,
@@ -478,9 +689,10 @@ export async function syncWithCentralHubAction(): Promise<ActionResult<any>> {
         netProfit,
         isSyncedWithHub: true,
         syncedAt: new Date(),
+        lastSyncError: null,
       },
       create: {
-        date: today,
+        date: day,
         totalCollection,
         totalFuelExpense,
         totalTollAndLineFees,
@@ -493,9 +705,9 @@ export async function syncWithCentralHubAction(): Promise<ActionResult<any>> {
     });
 
     revalidatePath("/");
-    return { success: true, data: summary };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+    return { success: true, data: { ...summary, otherCosts } };
+  } catch (error) {
+    return fail(error);
   }
 }
 
@@ -504,57 +716,46 @@ export async function syncWithCentralHubAction(): Promise<ActionResult<any>> {
 // ============================================================================
 export async function generateSampleHistoryAction(): Promise<ActionResult<string>> {
   try {
+    await requireManager();
     const buses = await prisma.busVehicle.findMany();
     if (buses.length === 0) {
       return { success: false, error: "No buses found. Please register buses first." };
     }
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const settings = await loadSettings();
+    const today = toDayDate(todayLK());
 
     for (let i = 1; i <= 14; i++) {
       const targetDate = new Date(today);
-      targetDate.setDate(today.getDate() - i);
+      targetDate.setUTCDate(today.getUTCDate() - i);
 
       for (const bus of buses) {
-        const baseMorning = 35000 + Math.floor(Math.sin(i + bus.seatingCapacity) * 4000) + (bus.seatingCapacity * 120);
-        const baseEvening = 40000 + Math.floor(Math.cos(i) * 5000) + (bus.seatingCapacity * 150);
-        const gross = baseMorning + baseEvening;
-        const fuel = 18500 + Math.floor(Math.random() * 4000);
+        const morning = 35000 + Math.floor(Math.sin(i + bus.seatingCapacity) * 4000) + bus.seatingCapacity * 120;
+        const evening = 40000 + Math.floor(Math.cos(i) * 5000) + bus.seatingCapacity * 150;
+        const gross = morning + evening;
+        const liters = 52 + Math.floor(Math.random() * 12);
+        const fuel = Math.round(liters * 340);
+        const km = 210 + Math.floor(Math.random() * 40);
         const tolls = 800 + (i % 2 === 0 ? 400 : 0);
-        const conductorComm = Number((gross * 0.04).toFixed(2));
-        const driverComm = Number((gross * 0.05).toFixed(2));
+        const data = {
+          morningCollection: morning,
+          eveningCollection: evening,
+          fuelCost: fuel,
+          fuelLiters: liters,
+          kmRun: km,
+          tollAndLineFees: tolls,
+          otherExpenses: i % 3 === 0 ? 500 : 0,
+          conductorCommission: Number(((gross * settings.conductorCommissionPct) / 100).toFixed(2)),
+          driverCommission: Number(((gross * settings.driverCommissionPct) / 100).toFixed(2)),
+        };
 
         await prisma.dailyRouteLog.upsert({
-          where: {
-            busId_date: {
-              busId: bus.id,
-              date: targetDate,
-            },
-          },
-          update: {
-            morningCollection: baseMorning,
-            eveningCollection: baseEvening,
-            fuelCost: fuel,
-            tollAndLineFees: tolls,
-            conductorCommission: conductorComm,
-            driverCommission: driverComm,
-          },
-          create: {
-            busId: bus.id,
-            date: targetDate,
-            routeName: bus.routeName,
-            morningCollection: baseMorning,
-            eveningCollection: baseEvening,
-            fuelCost: fuel,
-            tollAndLineFees: tolls,
-            conductorCommission: conductorComm,
-            driverCommission: driverComm,
-          },
+          where: { busId_date: { busId: bus.id, date: targetDate } },
+          update: data,
+          create: { ...data, busId: bus.id, date: targetDate, routeName: bus.routeName },
         });
       }
 
-      if (i % 4 === 0 && buses.length > 0) {
+      if (i % 4 === 0) {
         const busToService = buses[i % buses.length];
         await prisma.busMaintenanceLog.create({
           data: {
@@ -570,7 +771,7 @@ export async function generateSampleHistoryAction(): Promise<ActionResult<string
 
     revalidatePath("/");
     return { success: true, data: "Successfully generated 14-day history in LKR!" };
-  } catch (error: any) {
-    return { success: false, error: error.message };
+  } catch (error) {
+    return fail(error);
   }
 }

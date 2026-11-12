@@ -68,6 +68,8 @@ export async function getCurrentUserAction(): Promise<SessionUser | null> {
  */
 export async function seedInitialDataAction(): Promise<ActionResult<string>> {
   try {
+    const current = await getSessionUser();
+    if (!current) return { success: false, error: "Not authenticated." };
     await ensureDefaultUsers();
 
     const busCount = await prisma.busVehicle.count();

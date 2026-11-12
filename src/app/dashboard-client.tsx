@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { logoutAction, seedInitialDataAction } from "@/app/actions/auth";
+import { logoutAction } from "@/app/actions/auth";
 import {
   getFleetDataAction,
   addBusAction,
@@ -17,79 +17,46 @@ import {
   addCrewAction,
   updateCrewAction,
   deleteCrewAction,
+  copyCrewToDateAction,
   syncWithCentralHubAction,
   generateSampleHistoryAction,
 } from "@/app/actions/fleet";
 import { SessionUser } from "@/lib/auth";
+import {
+  Bus,
+  RouteLog,
+  MaintenanceItem,
+  CrewMember,
+  Expense,
+  Settings,
+  DEFAULT_SETTINGS,
+  DOCUMENT_FIELDS,
+  formatLKR,
+  formatCompactLKR,
+  computePeriodReport,
+  daysUntil,
+  downloadCSV,
+} from "@/lib/fleet-calc";
+import { todayLK, addDays } from "@/lib/dates";
+import ExpensesTab from "./components/expenses-tab";
+import ReportsTab from "./components/reports-tab";
+import SettingsModal from "./components/settings-modal";
 
-interface Bus {
-  id: string;
-  regNumber: string;
-  route: string;
-  capacity: number;
-  status: "ACTIVE" | "MAINTENANCE" | "IDLE";
-  isActive?: boolean;
-}
-
-interface RouteLog {
-  id: string;
-  busId: string;
-  busReg: string;
-  route: string;
-  morningCollection: number;
-  eveningCollection: number;
-  fuelCost: number;
-  tollFees: number;
-  commission: number;
-  conductorCommission?: number;
-  driverCommission?: number;
-  date: string;
-}
-
-interface MaintenanceItem {
-  id: string;
-  busId: string;
-  busReg: string;
-  type: string;
-  vendor: string;
-  cost: number;
-  date: string;
-  status: string;
-}
-
-interface CrewMember {
-  id: string;
-  busId?: string | null;
-  name: string;
-  role: "DRIVER" | "CONDUCTOR";
-  assignedBus: string;
-  wage: number;
-  advance: number;
-  balance: number;
-  date?: string;
-  present: boolean;
-}
-
-// LKR Currency Formatters
-export const formatLKR = (val: number | string | undefined | null) => {
-  if (val === undefined || val === null) return "Rs. 0.00";
-  const num = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(num)) return "Rs. 0.00";
+function DocBadge({ date, today }: { date?: string; today: string }) {
+  const d = daysUntil(date, today);
+  if (d === null) return <span className="text-slate-600">—</span>;
+  const cls =
+    d < 0
+      ? "bg-rose-500/20 text-rose-400 border-rose-500/30"
+      : d <= 30
+      ? "bg-amber-500/20 text-amber-400 border-amber-500/30"
+      : "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
   return (
-    "Rs. " +
-    num.toLocaleString("en-LK", {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${cls}`} title={date}>
+      {d < 0 ? `Expired ${-d}d` : d === 0 ? "Today" : `${d}d`}
+    </span>
   );
-};
-
-export const formatCompactLKR = (val: number | string | undefined | null) => {
-  if (val === undefined || val === null) return "Rs. 0";
-  const num = typeof val === "string" ? parseFloat(val) : val;
-  if (isNaN(num)) return "Rs. 0";
-  return "Rs. " + Math.round(num).toLocaleString("en-LK");
-};
+}
 
 export default function FleetDashboardClient({
   initialUser,
@@ -100,54 +67,62 @@ export default function FleetDashboardClient({
   const [currentUser] = useState<SessionUser>(initialUser);
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "sync"
+    "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync"
   >("overview");
 
   const [buses, setBuses] = useState<Bus[]>([]);
   const [routeLogs, setRouteLogs] = useState<RouteLog[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceItem[]>([]);
   const [crewRoster, setCrewRoster] = useState<CrewMember[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [showSettings, setShowSettings] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const isManager = currentUser.role === "FLEET_MANAGER";
 
-  // Maintenance Monthly Budget state (in LKR)
-  const [maintenanceBudget, setMaintenanceBudget] = useState<number>(250000);
-  const [showBudgetModal, setShowBudgetModal] = useState(false);
-  const [tempBudget, setTempBudget] = useState("250000");
+  // Maintenance Monthly Budget (persisted in settings)
+  const maintenanceBudget = settings.maintenanceBudget;
 
   // Analytics filter state
   const [timeframe, setTimeframe] = useState<"daily" | "weekly" | "monthly" | "all">("monthly");
-  const todayStr = new Date().toISOString().split("T")[0];
+  const todayStr = todayLK();
   const thisMonthStr = todayStr.slice(0, 7); // "YYYY-MM"
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [selectedMonth, setSelectedMonth] = useState<string>(thisMonthStr);
+
+  // List filters
+  const [logFilterMonth, setLogFilterMonth] = useState<string>(thisMonthStr);
+  const [logFilterBus, setLogFilterBus] = useState<string>("");
+  const [maintFilterBus, setMaintFilterBus] = useState<string>("");
+  const [crewFilterDate, setCrewFilterDate] = useState<string>(todayStr);
 
   const loadData = async () => {
     try {
       const res = await getFleetDataAction();
       if (res.success && res.data) {
-        if (res.data.buses.length > 0) {
-          setBuses(res.data.buses as any);
-          setRouteLogs(res.data.routeLogs as any);
-          setMaintenanceRecords(res.data.maintenanceRecords as any);
-          setCrewRoster(res.data.crewRoster as any);
-        } else {
-          await seedInitialDataAction();
-          const secondTry = await getFleetDataAction();
-          if (secondTry.success && secondTry.data) {
-            setBuses(secondTry.data.buses as any);
-            setRouteLogs(secondTry.data.routeLogs as any);
-            setMaintenanceRecords(secondTry.data.maintenanceRecords as any);
-            setCrewRoster(secondTry.data.crewRoster as any);
-          }
-        }
+        setBuses(res.data.buses as Bus[]);
+        setRouteLogs(res.data.routeLogs as RouteLog[]);
+        setMaintenanceRecords(res.data.maintenanceRecords as MaintenanceItem[]);
+        setCrewRoster(res.data.crewRoster as CrewMember[]);
+        setExpenses(res.data.expenses as Expense[]);
+        setSettings(res.data.settings);
+        setLoadError("");
+      } else if (!res.success) {
+        setLoadError(res.error);
       }
     } catch (err) {
       console.error("Failed to load fleet data:", err);
+      setLoadError("Could not load fleet data. Check your connection and try again.");
+    } finally {
+      setLoaded(true);
     }
   };
 
   useEffect(() => {
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogout = async () => {
@@ -174,25 +149,25 @@ export default function FleetDashboardClient({
   const filteredData = useMemo(() => {
     let filteredLogs = [...routeLogs];
     let filteredMaint = [...maintenanceRecords];
+    let filteredCrew = [...crewRoster];
+    let filteredExpenses = [...expenses];
 
     if (timeframe === "daily") {
       filteredLogs = filteredLogs.filter((l) => l.date === selectedDate);
       filteredMaint = filteredMaint.filter((m) => m.date === selectedDate);
+      filteredCrew = filteredCrew.filter((c) => c.date === selectedDate);
+      filteredExpenses = filteredExpenses.filter((e) => e.date === selectedDate);
     } else if (timeframe === "weekly") {
-      const targetDate = new Date(selectedDate);
-      const sevenDaysAgo = new Date(targetDate);
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const minDateStr = sevenDaysAgo.toISOString().split("T")[0];
-
-      filteredLogs = filteredLogs.filter(
-        (l) => l.date >= minDateStr && l.date <= selectedDate
-      );
-      filteredMaint = filteredMaint.filter(
-        (m) => m.date >= minDateStr && m.date <= selectedDate
-      );
+      const minDateStr = addDays(selectedDate, -6);
+      filteredLogs = filteredLogs.filter((l) => l.date >= minDateStr && l.date <= selectedDate);
+      filteredMaint = filteredMaint.filter((m) => m.date >= minDateStr && m.date <= selectedDate);
+      filteredCrew = filteredCrew.filter((c) => (c.date || "") >= minDateStr && (c.date || "") <= selectedDate);
+      filteredExpenses = filteredExpenses.filter((e) => e.date >= minDateStr && e.date <= selectedDate);
     } else if (timeframe === "monthly") {
       filteredLogs = filteredLogs.filter((l) => l.date.startsWith(selectedMonth));
       filteredMaint = filteredMaint.filter((m) => m.date.startsWith(selectedMonth));
+      filteredCrew = filteredCrew.filter((c) => (c.date || "").startsWith(selectedMonth));
+      filteredExpenses = filteredExpenses.filter((e) => e.date.startsWith(selectedMonth));
     }
 
     const totalMorning = filteredLogs.reduce((acc, curr) => acc + curr.morningCollection, 0);
@@ -200,18 +175,30 @@ export default function FleetDashboardClient({
     const grossRevenue = totalMorning + totalEvening;
 
     const totalFuel = filteredLogs.reduce((acc, curr) => acc + curr.fuelCost, 0);
+    const totalLiters = filteredLogs.reduce((acc, curr) => acc + (curr.fuelLiters ?? 0), 0);
+    const totalKm = filteredLogs.reduce((acc, curr) => acc + (curr.kmRun ?? 0), 0);
     const totalTolls = filteredLogs.reduce((acc, curr) => acc + curr.tollFees, 0);
+    const totalTripOther = filteredLogs.reduce((acc, curr) => acc + (curr.otherExpenses ?? 0), 0);
     const totalCommissions = filteredLogs.reduce((acc, curr) => acc + curr.commission, 0);
     const totalMaintenanceCost = filteredMaint.reduce((acc, curr) => acc + curr.cost, 0);
+    const totalCrewWages = filteredCrew.reduce((acc, curr) => acc + curr.wage, 0);
+    const totalGeneralExpenses = filteredExpenses.reduce((acc, curr) => acc + curr.amount, 0);
 
     const uniqueDays = Array.from(new Set(filteredLogs.map((l) => l.date))).length || 1;
-    const estimatedCrewWages = crewRoster.reduce((sum, c) => sum + (c.present ? c.wage : 0), 0) * uniqueDays;
 
     const totalExpenses =
-      totalFuel + totalTolls + totalCommissions + totalMaintenanceCost + (timeframe === "daily" ? crewRoster.reduce((s, c) => s + c.wage, 0) : 0);
+      totalFuel +
+      totalTolls +
+      totalTripOther +
+      totalCommissions +
+      totalCrewWages +
+      totalMaintenanceCost +
+      totalGeneralExpenses;
     const netProfit = grossRevenue - totalExpenses;
     const profitMargin = grossRevenue > 0 ? (netProfit / grossRevenue) * 100 : 0;
     const fuelRatio = grossRevenue > 0 ? (totalFuel / grossRevenue) * 100 : 0;
+    const kmPerLiter = totalLiters > 0 ? totalKm / totalLiters : 0;
+    const costPerKm = totalKm > 0 ? totalExpenses / totalKm : 0;
 
     // Daily Timeline Series
     const dateMap: {
@@ -222,50 +209,53 @@ export default function FleetDashboardClient({
         tolls: number;
         commission: number;
         maintenance: number;
+        other: number;
         expenses: number;
         profit: number;
       };
     } = {};
 
-    filteredLogs.forEach((log) => {
-      if (!dateMap[log.date]) {
-        dateMap[log.date] = {
-          date: log.date,
+    const ensureDay = (d: string) => {
+      if (!dateMap[d]) {
+        dateMap[d] = {
+          date: d,
           revenue: 0,
           fuel: 0,
           tolls: 0,
           commission: 0,
           maintenance: 0,
+          other: 0,
           expenses: 0,
           profit: 0,
         };
       }
-      const rev = log.morningCollection + log.eveningCollection;
-      dateMap[log.date].revenue += rev;
-      dateMap[log.date].fuel += log.fuelCost;
-      dateMap[log.date].tolls += log.tollFees;
-      dateMap[log.date].commission += log.commission;
+      return dateMap[d];
+    };
+
+    filteredLogs.forEach((log) => {
+      const row = ensureDay(log.date);
+      row.revenue += log.morningCollection + log.eveningCollection;
+      row.fuel += log.fuelCost;
+      row.tolls += log.tollFees;
+      row.commission += log.commission;
+      row.other += log.otherExpenses ?? 0;
     });
 
     filteredMaint.forEach((m) => {
-      if (!dateMap[m.date]) {
-        dateMap[m.date] = {
-          date: m.date,
-          revenue: 0,
-          fuel: 0,
-          tolls: 0,
-          commission: 0,
-          maintenance: 0,
-          expenses: 0,
-          profit: 0,
-        };
-      }
-      dateMap[m.date].maintenance += m.cost;
+      ensureDay(m.date).maintenance += m.cost;
+    });
+
+    filteredCrew.forEach((c) => {
+      if (c.date) ensureDay(c.date).commission += c.wage;
+    });
+
+    filteredExpenses.forEach((e) => {
+      ensureDay(e.date).other += e.amount;
     });
 
     Object.keys(dateMap).forEach((d) => {
       const item = dateMap[d];
-      item.expenses = item.fuel + item.tolls + item.commission + item.maintenance;
+      item.expenses = item.fuel + item.tolls + item.commission + item.maintenance + item.other;
       item.profit = item.revenue - item.expenses;
     });
 
@@ -279,8 +269,12 @@ export default function FleetDashboardClient({
         daysCount: number;
         revenue: number;
         fuel: number;
+        km: number;
+        liters: number;
         tolls: number;
+        commission: number;
         maintenance: number;
+        other: number;
         net: number;
       };
     } = {};
@@ -292,8 +286,12 @@ export default function FleetDashboardClient({
         daysCount: 0,
         revenue: 0,
         fuel: 0,
+        km: 0,
+        liters: 0,
         tolls: 0,
+        commission: 0,
         maintenance: 0,
+        other: 0,
         net: 0,
       };
     });
@@ -306,8 +304,12 @@ export default function FleetDashboardClient({
           daysCount: 0,
           revenue: 0,
           fuel: 0,
+          km: 0,
+          liters: 0,
           tolls: 0,
+          commission: 0,
           maintenance: 0,
+          other: 0,
           net: 0,
         };
       }
@@ -315,7 +317,11 @@ export default function FleetDashboardClient({
       busPerfMap[l.busReg].daysCount += 1;
       busPerfMap[l.busReg].revenue += rev;
       busPerfMap[l.busReg].fuel += l.fuelCost;
+      busPerfMap[l.busReg].km += l.kmRun ?? 0;
+      busPerfMap[l.busReg].liters += l.fuelLiters ?? 0;
       busPerfMap[l.busReg].tolls += l.tollFees;
+      busPerfMap[l.busReg].commission += l.commission;
+      busPerfMap[l.busReg].other += l.otherExpenses ?? 0;
     });
 
     filteredMaint.forEach((m) => {
@@ -324,9 +330,15 @@ export default function FleetDashboardClient({
       }
     });
 
+    filteredExpenses.forEach((e) => {
+      if (e.busReg && busPerfMap[e.busReg]) {
+        busPerfMap[e.busReg].other += e.amount;
+      }
+    });
+
     Object.keys(busPerfMap).forEach((reg) => {
       const b = busPerfMap[reg];
-      b.net = b.revenue - (b.fuel + b.tolls + b.maintenance);
+      b.net = b.revenue - (b.fuel + b.tolls + b.commission + b.maintenance + b.other);
     });
 
     const busPerformance = Object.values(busPerfMap).sort((a, b) => b.net - a.net);
@@ -334,45 +346,100 @@ export default function FleetDashboardClient({
     return {
       filteredLogs,
       filteredMaint,
+      filteredCrew,
+      filteredExpenses,
       grossRevenue,
       totalMorning,
       totalEvening,
       totalFuel,
+      totalLiters,
+      totalKm,
       totalTolls,
+      totalTripOther,
       totalCommissions,
+      totalCrewWages,
       totalMaintenanceCost,
-      estimatedCrewWages,
+      totalGeneralExpenses,
       totalExpenses,
       netProfit,
       profitMargin,
       fuelRatio,
+      kmPerLiter,
+      costPerKm,
       timelineData,
       busPerformance,
       uniqueDays: uniqueDays || 1,
     };
-  }, [routeLogs, maintenanceRecords, buses, crewRoster, timeframe, selectedDate, selectedMonth]);
+  }, [routeLogs, maintenanceRecords, buses, crewRoster, expenses, timeframe, selectedDate, selectedMonth]);
+
+  // Compliance & Maintenance Alerts (expiring within 30 days or overdue)
+  const complianceAlerts = useMemo(() => {
+    const items: { busReg: string; label: string; date: string; days: number }[] = [];
+    for (const b of buses) {
+      for (const f of DOCUMENT_FIELDS) {
+        const val = b[f.key] as string | undefined;
+        const d = daysUntil(val, todayStr);
+        if (d !== null && d <= 30 && val) {
+          items.push({ busReg: b.regNumber, label: f.label, date: val, days: d });
+        }
+      }
+    }
+    for (const m of maintenanceRecords) {
+      const d = daysUntil(m.nextServiceDate, todayStr);
+      if (d !== null && d <= 14 && m.nextServiceDate) {
+        items.push({
+          busReg: m.busReg,
+          label: `Next Service (${m.type})`,
+          date: m.nextServiceDate,
+          days: d,
+        });
+      }
+    }
+    return items.sort((a, b) => a.days - b.days);
+  }, [buses, maintenanceRecords, todayStr]);
 
   // Export CSV Report in LKR
   const handleExportCSV = () => {
-    let csv = "Date,Bus,Route,Morning Fare (LKR),Evening Fare (LKR),Total Fare (LKR),Fuel Cost (LKR),Toll Fees (LKR),Commission (LKR),Net Bus Profit (LKR)\n";
-    filteredData.filteredLogs.forEach((l) => {
-      const total = l.morningCollection + l.eveningCollection;
-      const net = total - (l.fuelCost + l.tollFees + l.commission);
-      csv += `"${l.date}","${l.busReg}","${l.route.replace(/"/g, '""')}",${l.morningCollection.toFixed(2)},${l.eveningCollection.toFixed(2)},${total.toFixed(2)},${l.fuelCost.toFixed(2)},${l.tollFees.toFixed(2)},${l.commission.toFixed(2)},${net.toFixed(2)}\n`;
-    });
-
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `fleetflow-analytics-${timeframe}-${selectedDate}-lkr.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCSV(`fleetflow-analytics-${timeframe}-${selectedDate}-lkr.csv`, [
+      [
+        "Date",
+        "Bus",
+        "Route",
+        "Morning Fare (LKR)",
+        "Evening Fare (LKR)",
+        "Total Fare (LKR)",
+        "Km Run",
+        "Fuel Litres",
+        "Fuel Cost (LKR)",
+        "Toll Fees (LKR)",
+        "Other Trip Cost (LKR)",
+        "Commission (LKR)",
+        "Net Bus Profit (LKR)",
+      ],
+      ...filteredData.filteredLogs.map((l) => {
+        const total = l.morningCollection + l.eveningCollection;
+        const net = total - (l.fuelCost + l.tollFees + (l.otherExpenses ?? 0) + l.commission);
+        return [
+          l.date,
+          l.busReg,
+          l.route,
+          l.morningCollection,
+          l.eveningCollection,
+          total,
+          l.kmRun ?? 0,
+          l.fuelLiters ?? 0,
+          l.fuelCost,
+          l.tollFees,
+          l.otherExpenses ?? 0,
+          l.commission,
+          net,
+        ];
+      }),
+    ]);
   };
 
   // ============================================================================
-  // BUS MANAGEMENT STATE (ADD, EDIT, DELETE)
+  // BUS MANAGEMENT STATE (ADD, EDIT, DELETE + STATUTORY DOCUMENTS)
   // ============================================================================
   const [showAddBusModal, setShowAddBusModal] = useState(false);
   const [editingBus, setEditingBus] = useState<Bus | null>(null);
@@ -380,6 +447,13 @@ export default function FleetDashboardClient({
   const [busRoute, setBusRoute] = useState("");
   const [busCapacity, setBusCapacity] = useState(54);
   const [busActive, setBusActive] = useState(true);
+  const [busDocs, setBusDocs] = useState({
+    insuranceExpiry: "",
+    revenueLicenseExpiry: "",
+    routePermitExpiry: "",
+    emissionTestExpiry: "",
+    fitnessCertExpiry: "",
+  });
   const [submittingBus, setSubmittingBus] = useState(false);
 
   const handleOpenAddBus = () => {
@@ -388,6 +462,13 @@ export default function FleetDashboardClient({
     setBusRoute("");
     setBusCapacity(54);
     setBusActive(true);
+    setBusDocs({
+      insuranceExpiry: "",
+      revenueLicenseExpiry: "",
+      routePermitExpiry: "",
+      emissionTestExpiry: "",
+      fitnessCertExpiry: "",
+    });
     setShowAddBusModal(true);
   };
 
@@ -397,6 +478,13 @@ export default function FleetDashboardClient({
     setBusRoute(bus.route);
     setBusCapacity(bus.capacity);
     setBusActive(bus.status === "ACTIVE");
+    setBusDocs({
+      insuranceExpiry: bus.insuranceExpiry || "",
+      revenueLicenseExpiry: bus.revenueLicenseExpiry || "",
+      routePermitExpiry: bus.routePermitExpiry || "",
+      emissionTestExpiry: bus.emissionTestExpiry || "",
+      fitnessCertExpiry: bus.fitnessCertExpiry || "",
+    });
     setShowAddBusModal(true);
   };
 
@@ -405,22 +493,21 @@ export default function FleetDashboardClient({
     if (!busReg || !busRoute) return;
     setSubmittingBus(true);
     try {
-      if (editingBus) {
-        const res = await updateBusAction(editingBus.id, busReg, busRoute, busCapacity, busActive);
-        if (res.success) {
-          await loadData();
-          setShowAddBusModal(false);
-        } else {
-          alert(res.error || "Failed to update vehicle");
-        }
+      const payload = {
+        regNumber: busReg,
+        routeName: busRoute,
+        seatingCapacity: busCapacity,
+        isActive: busActive,
+        ...busDocs,
+      };
+      const res = editingBus
+        ? await updateBusAction(editingBus.id, payload)
+        : await addBusAction(payload);
+      if (res.success) {
+        await loadData();
+        setShowAddBusModal(false);
       } else {
-        const res = await addBusAction(busReg, busRoute, busCapacity);
-        if (res.success) {
-          await loadData();
-          setShowAddBusModal(false);
-        } else {
-          alert(res.error || "Failed to register vehicle");
-        }
+        alert(res.error || "Failed to save vehicle");
       }
     } finally {
       setSubmittingBus(false);
@@ -439,7 +526,7 @@ export default function FleetDashboardClient({
   };
 
   // ============================================================================
-  // ROUTE LOG MANAGEMENT STATE (ADD, EDIT, DELETE)
+  // ROUTE LOG MANAGEMENT STATE (ADD, EDIT, DELETE + KM, LITRES, NOTES)
   // ============================================================================
   const [showAddLogModal, setShowAddLogModal] = useState(false);
   const [editingLog, setEditingLog] = useState<RouteLog | null>(null);
@@ -449,6 +536,10 @@ export default function FleetDashboardClient({
   const [logEvening, setLogEvening] = useState("");
   const [logFuel, setLogFuel] = useState("");
   const [logTolls, setLogTolls] = useState("");
+  const [logKmRun, setLogKmRun] = useState("");
+  const [logFuelLiters, setLogFuelLiters] = useState("");
+  const [logOtherExpenses, setLogOtherExpenses] = useState("");
+  const [logNotes, setLogNotes] = useState("");
   const [submittingLog, setSubmittingLog] = useState(false);
 
   const handleOpenAddLog = () => {
@@ -459,6 +550,10 @@ export default function FleetDashboardClient({
     setLogEvening("");
     setLogFuel("");
     setLogTolls("");
+    setLogKmRun("");
+    setLogFuelLiters("");
+    setLogOtherExpenses("");
+    setLogNotes("");
     setShowAddLogModal(true);
   };
 
@@ -470,6 +565,10 @@ export default function FleetDashboardClient({
     setLogEvening(log.eveningCollection.toString());
     setLogFuel(log.fuelCost.toString());
     setLogTolls(log.tollFees.toString());
+    setLogKmRun(log.kmRun ? log.kmRun.toString() : "");
+    setLogFuelLiters(log.fuelLiters ? log.fuelLiters.toString() : "");
+    setLogOtherExpenses(log.otherExpenses ? log.otherExpenses.toString() : "");
+    setLogNotes(log.notes || "");
     setShowAddLogModal(true);
   };
 
@@ -478,37 +577,26 @@ export default function FleetDashboardClient({
     if (!logBusId) return;
     setSubmittingLog(true);
     try {
-      if (editingLog) {
-        const res = await updateRouteLogAction(
-          editingLog.id,
-          logBusId,
-          Number(logMorning) || 0,
-          Number(logEvening) || 0,
-          Number(logFuel) || 0,
-          Number(logTolls) || 0,
-          logDate
-        );
-        if (res.success) {
-          await loadData();
-          setShowAddLogModal(false);
-        } else {
-          alert(res.error || "Failed to update route log");
-        }
+      const payload = {
+        busId: logBusId,
+        date: logDate,
+        morningCollection: Number(logMorning) || 0,
+        eveningCollection: Number(logEvening) || 0,
+        fuelCost: Number(logFuel) || 0,
+        tollAndLineFees: Number(logTolls) || 0,
+        kmRun: logKmRun,
+        fuelLiters: logFuelLiters,
+        otherExpenses: logOtherExpenses,
+        notes: logNotes,
+      };
+      const res = editingLog
+        ? await updateRouteLogAction(editingLog.id, payload)
+        : await addRouteLogAction(payload);
+      if (res.success) {
+        await loadData();
+        setShowAddLogModal(false);
       } else {
-        const res = await addRouteLogAction(
-          logBusId,
-          Number(logMorning) || 0,
-          Number(logEvening) || 0,
-          Number(logFuel) || 0,
-          Number(logTolls) || 0,
-          logDate
-        );
-        if (res.success) {
-          await loadData();
-          setShowAddLogModal(false);
-        } else {
-          alert(res.error || "Failed to record route log");
-        }
+        alert(res.error || "Failed to save route log");
       }
     } finally {
       setSubmittingLog(false);
@@ -526,6 +614,31 @@ export default function FleetDashboardClient({
     }
   };
 
+  // Live calculation preview for the Route Log modal
+  const logPreview = useMemo(() => {
+    const gross = (Number(logMorning) || 0) + (Number(logEvening) || 0);
+    const driverComm = (gross * settings.driverCommissionPct) / 100;
+    const conductorComm = (gross * settings.conductorCommissionPct) / 100;
+    const comm = driverComm + conductorComm;
+    const fuel = Number(logFuel) || 0;
+    const tolls = Number(logTolls) || 0;
+    const other = Number(logOtherExpenses) || 0;
+    const totalExp = fuel + tolls + other + comm;
+    const net = gross - totalExp;
+    const km = Number(logKmRun) || 0;
+    const liters = Number(logFuelLiters) || 0;
+    return {
+      gross,
+      driverComm,
+      conductorComm,
+      comm,
+      totalExp,
+      net,
+      kmPerLiter: liters > 0 ? km / liters : 0,
+      costPerKm: km > 0 ? totalExp / km : 0,
+    };
+  }, [logMorning, logEvening, logFuel, logTolls, logOtherExpenses, logKmRun, logFuelLiters, settings]);
+
   // ============================================================================
   // VEHICLE MAINTENANCE & BUDGETING STATE (ADD, EDIT, DELETE, BUDGET)
   // ============================================================================
@@ -536,6 +649,9 @@ export default function FleetDashboardClient({
   const [maintType, setMaintType] = useState("");
   const [maintVendor, setMaintVendor] = useState("");
   const [maintCost, setMaintCost] = useState("");
+  const [maintOdometer, setMaintOdometer] = useState("");
+  const [maintNextDate, setMaintNextDate] = useState("");
+  const [maintNotes, setMaintNotes] = useState("");
   const [submittingMaint, setSubmittingMaint] = useState(false);
 
   // Common service presets for Sri Lankan bus fleets
@@ -560,6 +676,9 @@ export default function FleetDashboardClient({
     setMaintType(servicePresets[0]);
     setMaintVendor("Castrol Express Care");
     setMaintCost("28500.00");
+    setMaintOdometer("");
+    setMaintNextDate("");
+    setMaintNotes("");
     setShowMaintModal(true);
   };
 
@@ -570,6 +689,9 @@ export default function FleetDashboardClient({
     setMaintType(m.type);
     setMaintVendor(m.vendor);
     setMaintCost(m.cost.toString());
+    setMaintOdometer(m.odometerKm ? m.odometerKm.toString() : "");
+    setMaintNextDate(m.nextServiceDate || "");
+    setMaintNotes(m.notes || "");
     setShowMaintModal(true);
   };
 
@@ -578,35 +700,24 @@ export default function FleetDashboardClient({
     if (!maintBusId || !maintType) return;
     setSubmittingMaint(true);
     try {
-      if (editingMaint) {
-        const res = await updateMaintenanceAction(
-          editingMaint.id,
-          maintBusId,
-          maintType,
-          Number(maintCost) || 0,
-          maintVendor,
-          maintDate
-        );
-        if (res.success) {
-          await loadData();
-          setShowMaintModal(false);
-        } else {
-          alert(res.error || "Failed to update maintenance record");
-        }
+      const payload = {
+        busId: maintBusId,
+        date: maintDate,
+        serviceType: maintType,
+        vendorName: maintVendor,
+        cost: Number(maintCost) || 0,
+        odometerKm: maintOdometer,
+        nextServiceDate: maintNextDate,
+        notes: maintNotes,
+      };
+      const res = editingMaint
+        ? await updateMaintenanceAction(editingMaint.id, payload)
+        : await addMaintenanceAction(payload);
+      if (res.success) {
+        await loadData();
+        setShowMaintModal(false);
       } else {
-        const res = await addMaintenanceAction(
-          maintBusId,
-          maintType,
-          Number(maintCost) || 0,
-          maintVendor,
-          maintDate
-        );
-        if (res.success) {
-          await loadData();
-          setShowMaintModal(false);
-        } else {
-          alert(res.error || "Failed to add maintenance record");
-        }
+        alert(res.error || "Failed to save maintenance record");
       }
     } finally {
       setSubmittingMaint(false);
@@ -645,23 +756,26 @@ export default function FleetDashboardClient({
   }, [maintenanceRecords]);
 
   // ============================================================================
-  // CREW MANAGEMENT STATE (ADD, EDIT, DELETE)
+  // CREW MANAGEMENT STATE (ADD, EDIT, DELETE + DATE & COPY ROSTER)
   // ============================================================================
   const [showCrewModal, setShowCrewModal] = useState(false);
   const [editingCrew, setEditingCrew] = useState<CrewMember | null>(null);
   const [crewName, setCrewName] = useState("");
   const [crewRole, setCrewRole] = useState<"DRIVER" | "CONDUCTOR">("DRIVER");
   const [crewBusId, setCrewBusId] = useState("");
+  const [crewDate, setCrewDate] = useState(todayStr);
   const [crewWage, setCrewWage] = useState("3500");
   const [crewAdvance, setCrewAdvance] = useState("0");
   const [submittingCrew, setSubmittingCrew] = useState(false);
+  const [copyingCrew, setCopyingCrew] = useState(false);
 
   const handleOpenAddCrew = () => {
     setEditingCrew(null);
     setCrewName("");
     setCrewRole("DRIVER");
     setCrewBusId(buses[0]?.id || "");
-    setCrewWage("3500");
+    setCrewDate(crewFilterDate || todayStr);
+    setCrewWage(String(settings.driverBaseWage));
     setCrewAdvance("0");
     setShowCrewModal(true);
   };
@@ -671,6 +785,7 @@ export default function FleetDashboardClient({
     setCrewName(c.name);
     setCrewRole(c.role);
     setCrewBusId(c.busId || "");
+    setCrewDate(c.date || todayStr);
     setCrewWage(c.wage.toString());
     setCrewAdvance(c.advance.toString());
     setShowCrewModal(true);
@@ -681,35 +796,22 @@ export default function FleetDashboardClient({
     if (!crewName) return;
     setSubmittingCrew(true);
     try {
-      if (editingCrew) {
-        const res = await updateCrewAction(
-          editingCrew.id,
-          crewName,
-          crewRole,
-          Number(crewWage) || 0,
-          Number(crewAdvance) || 0,
-          crewBusId || undefined
-        );
-        if (res.success) {
-          await loadData();
-          setShowCrewModal(false);
-        } else {
-          alert(res.error || "Failed to update crew member");
-        }
+      const payload = {
+        employeeName: crewName,
+        role: crewRole,
+        dailyWage: Number(crewWage) || 0,
+        advanceTaken: Number(crewAdvance) || 0,
+        busId: crewBusId || undefined,
+        date: crewDate,
+      };
+      const res = editingCrew
+        ? await updateCrewAction(editingCrew.id, payload)
+        : await addCrewAction(payload);
+      if (res.success) {
+        await loadData();
+        setShowCrewModal(false);
       } else {
-        const res = await addCrewAction(
-          crewName,
-          crewRole,
-          Number(crewWage) || 0,
-          Number(crewAdvance) || 0,
-          crewBusId || undefined
-        );
-        if (res.success) {
-          await loadData();
-          setShowCrewModal(false);
-        } else {
-          alert(res.error || "Failed to add crew member");
-        }
+        alert(res.error || "Failed to save crew attendance");
       }
     } finally {
       setSubmittingCrew(false);
@@ -717,7 +819,7 @@ export default function FleetDashboardClient({
   };
 
   const handleDeleteCrew = async (c: CrewMember) => {
-    if (confirm(`Remove ${c.name} (${c.role}) from the roster?`)) {
+    if (confirm(`Remove ${c.name} (${c.role}) on ${c.date}?`)) {
       const res = await deleteCrewAction(c.id);
       if (res.success) {
         await loadData();
@@ -727,15 +829,56 @@ export default function FleetDashboardClient({
     }
   };
 
+  const handleCopyPreviousCrew = async () => {
+    const target = crewFilterDate || todayStr;
+    setCopyingCrew(true);
+    try {
+      const res = await copyCrewToDateAction(target);
+      if (res.success) {
+        await loadData();
+        if (res.data.created === 0) {
+          alert(`All known crew members are already marked for ${target}.`);
+        }
+      } else {
+        alert(res.error);
+      }
+    } finally {
+      setCopyingCrew(false);
+    }
+  };
+
+  // Filtered table rows
+  const visibleLogs = useMemo(
+    () =>
+      routeLogs.filter(
+        (l) =>
+          (!logFilterMonth || l.date.startsWith(logFilterMonth)) &&
+          (!logFilterBus || l.busId === logFilterBus)
+      ),
+    [routeLogs, logFilterMonth, logFilterBus]
+  );
+
+  const visibleMaint = useMemo(
+    () => maintenanceRecords.filter((m) => !maintFilterBus || m.busId === maintFilterBus),
+    [maintenanceRecords, maintFilterBus]
+  );
+
+  const visibleCrew = useMemo(
+    () => crewRoster.filter((c) => !crewFilterDate || c.date === crewFilterDate),
+    [crewRoster, crewFilterDate]
+  );
+
   // Sync Hub Action
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "synced">("idle");
+  const [syncDate, setSyncDate] = useState<string>(todayStr);
 
   const handleTriggerSync = async () => {
     setSyncStatus("syncing");
     try {
-      const res = await syncWithCentralHubAction();
+      const res = await syncWithCentralHubAction(syncDate);
       if (res.success) {
         setSyncStatus("synced");
+        await loadData();
       } else {
         alert(res.error || "Sync failed");
         setSyncStatus("idle");
@@ -744,6 +887,20 @@ export default function FleetDashboardClient({
       setSyncStatus("idle");
     }
   };
+
+  const syncDayReport = useMemo(
+    () =>
+      computePeriodReport({
+        from: syncDate,
+        to: syncDate,
+        buses,
+        routeLogs,
+        maintenance: maintenanceRecords,
+        crew: crewRoster,
+        expenses,
+      }),
+    [syncDate, buses, routeLogs, maintenanceRecords, crewRoster, expenses]
+  );
 
   const maxChartVal = useMemo(() => {
     if (filteredData.timelineData.length === 0) return 50000;
@@ -778,8 +935,15 @@ export default function FleetDashboardClient({
             </div>
           </div>
 
-          {/* User profile & Logout */}
+          {/* User profile, Settings & Logout */}
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition-colors"
+              title="Commission Rates, Base Wages & Monthly Budgets"
+            >
+              ⚙️ Settings
+            </button>
             <div className="text-right">
               <div className="text-xs font-bold text-white">{currentUser.name}</div>
               <div className="text-[10px] font-mono text-amber-400">
@@ -798,15 +962,26 @@ export default function FleetDashboardClient({
 
       {/* Main Content Area */}
       <div className="mx-auto w-full max-w-7xl px-6 py-6 space-y-6">
+        {loadError && (
+          <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-300 flex items-center justify-between">
+            <span>⚠️ {loadError}</span>
+            <button onClick={loadData} className="underline font-semibold hover:text-white">
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Navigation Tabs with hidden scrollbar */}
-        <div className="flex border-b border-slate-800 space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar scroll-smooth">
+        <div className="no-print flex border-b border-slate-800 space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar scroll-smooth">
           {[
             { id: "overview", label: "Fleet Overview", icon: "📊" },
             { id: "analytics", label: "Daily & Monthly Analytics", icon: "📈" },
-            { id: "maintenance", label: "Maintenance & Budget", icon: "🔧" },
-            { id: "buses", label: "Vehicles & Routes", icon: "🚍" },
+            { id: "reports", label: "Financial Reports", icon: "📑" },
             { id: "logs", label: "Daily Route Fares", icon: "📋" },
+            { id: "maintenance", label: "Maintenance & Budget", icon: "🔧" },
+            { id: "expenses", label: "Operating Expenses", icon: "🧾" },
             { id: "crew", label: "Crew & Attendance", icon: "👥" },
+            { id: "buses", label: "Vehicles & Documents", icon: "🚍" },
             { id: "sync", label: "Central Hub Sync", icon: "🔄" },
           ].map((tab) => (
             <button
@@ -825,6 +1000,33 @@ export default function FleetDashboardClient({
         </div>
 
         {/* ============================================================== */}
+        {/* TAB: OPERATING EXPENSES */}
+        {/* ============================================================== */}
+        {activeTab === "expenses" && (
+          <ExpensesTab
+            expenses={expenses}
+            buses={buses}
+            todayStr={todayStr}
+            onChanged={loadData}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB: FINANCIAL REPORTS (P&L, VEHICLE, CREW, DAILY + PRINT/CSV) */}
+        {/* ============================================================== */}
+        {activeTab === "reports" && (
+          <ReportsTab
+            buses={buses}
+            routeLogs={routeLogs}
+            maintenance={maintenanceRecords}
+            crew={crewRoster}
+            expenses={expenses}
+            todayStr={todayStr}
+            revenueTarget={settings.monthlyRevenueTarget}
+          />
+        )}
+
+        {/* ============================================================== */}
         {/* TAB: VEHICLE MAINTENANCE & WORKSHOP SERVICING & BUDGETING */}
         {/* ============================================================== */}
         {activeTab === "maintenance" && (
@@ -834,15 +1036,32 @@ export default function FleetDashboardClient({
               <div>
                 <h2 className="text-lg font-bold text-white">Vehicle Maintenance, Servicing & Budget Control</h2>
                 <p className="text-xs text-slate-400">
-                  Track workshop work orders, parts replacement, vendor billing, and fleet maintenance budget in LKR
+                  Track workshop work orders, odometer readings, next service dates, vendor billing, and monthly budget in LKR
                 </p>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    setTempBudget(maintenanceBudget.toString());
-                    setShowBudgetModal(true);
-                  }}
+                  onClick={() =>
+                    downloadCSV(`maintenance-logs-${todayStr}.csv`, [
+                      ["Date", "Bus", "Service Type", "Vendor", "Odometer (km)", "Next Service Date", "Cost (LKR)", "Notes"],
+                      ...visibleMaint.map((m) => [
+                        m.date,
+                        m.busReg,
+                        m.type,
+                        m.vendor,
+                        m.odometerKm || "",
+                        m.nextServiceDate || "",
+                        m.cost,
+                        m.notes || "",
+                      ]),
+                    ])
+                  }
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                >
+                  ⬇ CSV
+                </button>
+                <button
+                  onClick={() => setShowSettings(true)}
                   className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
                 >
                   ⚙️ Set Budget
@@ -938,6 +1157,18 @@ export default function FleetDashboardClient({
                   <h3 className="text-base font-bold text-white">Workshop Work Orders & Repair Logs</h3>
                   <p className="text-xs text-slate-400">Click Edit to modify service details or Delete to remove entries</p>
                 </div>
+                <select
+                  value={maintFilterBus}
+                  onChange={(e) => setMaintFilterBus(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="">All Buses</option>
+                  {buses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.regNumber}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-slate-800">
@@ -948,24 +1179,29 @@ export default function FleetDashboardClient({
                       <th className="py-3 px-4">Date</th>
                       <th className="py-3 px-4">Service Performed</th>
                       <th className="py-3 px-4">Workshop / Vendor</th>
+                      <th className="py-3 px-4">Odometer</th>
+                      <th className="py-3 px-4">Next Service</th>
                       <th className="py-3 px-4 text-rose-400 font-bold">Cost (LKR)</th>
-                      <th className="py-3 px-4">Status</th>
                       <th className="py-3 px-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800 text-slate-200">
-                    {maintenanceRecords.map((m) => (
+                    {visibleMaint.map((m) => (
                       <tr key={m.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{m.busReg}</td>
                         <td className="py-3.5 px-4 text-slate-400 font-mono">{m.date}</td>
-                        <td className="py-3.5 px-4 font-semibold text-white">{m.type}</td>
-                        <td className="py-3.5 px-4 text-slate-300">{m.vendor}</td>
-                        <td className="py-3.5 px-4 font-bold text-rose-400">{formatLKR(m.cost)}</td>
                         <td className="py-3.5 px-4">
-                          <span className="rounded-full px-2.5 py-0.5 text-[10px] font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                            {m.status || "Completed"}
-                          </span>
+                          <div className="font-semibold text-white">{m.type}</div>
+                          {m.notes && <div className="text-[10px] text-slate-500">{m.notes}</div>}
                         </td>
+                        <td className="py-3.5 px-4 text-slate-300">{m.vendor}</td>
+                        <td className="py-3.5 px-4 font-mono text-slate-400">
+                          {m.odometerKm ? `${m.odometerKm.toLocaleString("en-LK")} km` : "—"}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <DocBadge date={m.nextServiceDate} today={todayStr} />
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-rose-400">{formatLKR(m.cost)}</td>
                         <td className="py-3.5 px-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
@@ -991,51 +1227,6 @@ export default function FleetDashboardClient({
               </div>
             </div>
 
-            {/* Set Budget Modal */}
-            {showBudgetModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-base font-bold text-white">Monthly Maintenance Budget</h3>
-                    <button onClick={() => setShowBudgetModal(false)} className="text-slate-400 hover:text-white">✕</button>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Set Monthly Budget Ceiling (LKR)</label>
-                      <input
-                        type="number"
-                        step="1000"
-                        value={tempBudget}
-                        onChange={(e) => setTempBudget(e.target.value)}
-                        placeholder="250000"
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
-                    </div>
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowBudgetModal(false)}
-                        className="rounded-lg bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const val = Number(tempBudget) || 250000;
-                          setMaintenanceBudget(val);
-                          setShowBudgetModal(false);
-                        }}
-                        className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400"
-                      >
-                        Save Budget
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Add / Edit Maintenance Modal */}
             {showMaintModal && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -1048,31 +1239,32 @@ export default function FleetDashboardClient({
                   </div>
 
                   <form onSubmit={handleSaveMaint} className="space-y-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Select Bus</label>
-                      <select
-                        required
-                        value={maintBusId}
-                        onChange={(e) => setMaintBusId(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      >
-                        {buses.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.regNumber} - {b.route}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Date of Service</label>
-                      <input
-                        type="date"
-                        required
-                        value={maintDate}
-                        onChange={(e) => setMaintDate(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Select Bus</label>
+                        <select
+                          required
+                          value={maintBusId}
+                          onChange={(e) => setMaintBusId(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        >
+                          {buses.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.regNumber}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Date of Service</label>
+                        <input
+                          type="date"
+                          required
+                          value={maintDate}
+                          onChange={(e) => setMaintDate(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     <div>
@@ -1093,27 +1285,63 @@ export default function FleetDashboardClient({
                       </datalist>
                     </div>
 
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Workshop / Vendor Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={maintVendor}
-                        onChange={(e) => setMaintVendor(e.target.value)}
-                        placeholder="e.g. Castrol Express Hub / Prime Motors"
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Workshop / Vendor</label>
+                        <input
+                          type="text"
+                          required
+                          value={maintVendor}
+                          onChange={(e) => setMaintVendor(e.target.value)}
+                          placeholder="e.g. Castrol Express Hub"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Cost (LKR)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={maintCost}
+                          onChange={(e) => setMaintCost(e.target.value)}
+                          placeholder="28500.00"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Odometer (km, optional)</label>
+                        <input
+                          type="number"
+                          step="1"
+                          min="0"
+                          value={maintOdometer}
+                          onChange={(e) => setMaintOdometer(e.target.value)}
+                          placeholder="e.g. 142500"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Next Service Due (optional)</label>
+                        <input
+                          type="date"
+                          value={maintNextDate}
+                          onChange={(e) => setMaintNextDate(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     <div>
-                      <label className="text-xs font-semibold text-slate-300">Cost (LKR)</label>
+                      <label className="text-xs font-semibold text-slate-300">Notes / Parts Replaced (optional)</label>
                       <input
-                        type="number"
-                        step="0.01"
-                        required
-                        value={maintCost}
-                        onChange={(e) => setMaintCost(e.target.value)}
-                        placeholder="28500.00"
+                        type="text"
+                        value={maintNotes}
+                        onChange={(e) => setMaintNotes(e.target.value)}
+                        placeholder="e.g. Replaced 15W-40 oil 14L + oil & diesel filters"
                         className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
                       />
                     </div>
@@ -1520,6 +1748,37 @@ export default function FleetDashboardClient({
         {/* ============================================================== */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {complianceAlerts.length > 0 && (
+              <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-bold uppercase tracking-wider text-amber-300">
+                    ⚠️ Document & Service Alerts ({complianceAlerts.length})
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("buses")}
+                    className="text-xs font-semibold text-amber-400 underline hover:text-white"
+                  >
+                    Manage Documents →
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {complianceAlerts.map((a, i) => (
+                    <span
+                      key={i}
+                      className={`rounded-lg border px-2.5 py-1 text-xs ${
+                        a.days < 0
+                          ? "border-rose-500/40 bg-rose-500/20 text-rose-300"
+                          : "border-amber-500/40 bg-amber-500/15 text-amber-200"
+                      }`}
+                    >
+                      <strong className="font-mono">{a.busReg}</strong> — {a.label}:{" "}
+                      {a.days < 0 ? `expired ${-a.days}d ago` : a.days === 0 ? "due today" : `in ${a.days}d`} ({a.date})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
@@ -1560,12 +1819,12 @@ export default function FleetDashboardClient({
                 <div className="mt-3 flex items-baseline gap-2">
                   <span className="text-2xl sm:text-3xl font-extrabold text-white">{formatLKR(filteredData.totalExpenses)}</span>
                 </div>
-                <div className="mt-2 text-xs text-slate-400 flex gap-1.5">
+                <div className="mt-2 text-xs text-slate-400 flex flex-wrap gap-1.5">
                   <span>Fuel: {formatCompactLKR(filteredData.totalFuel)}</span>
                   <span>•</span>
-                  <span>Tolls: {formatCompactLKR(filteredData.totalTolls)}</span>
-                  <span>•</span>
                   <span>Maint: {formatCompactLKR(filteredData.totalMaintenanceCost)}</span>
+                  <span>•</span>
+                  <span>Other: {formatCompactLKR(filteredData.totalGeneralExpenses)}</span>
                 </div>
               </div>
 
@@ -1577,9 +1836,12 @@ export default function FleetDashboardClient({
                 <div className="mt-3 flex items-baseline gap-2">
                   <span className="text-2xl sm:text-3xl font-extrabold text-amber-400">{formatLKR(filteredData.netProfit)}</span>
                 </div>
-                <div className="mt-2 text-xs text-amber-200/80">
+                <div className="mt-2 text-xs text-amber-200/80 flex gap-3">
+                  <button onClick={() => setActiveTab("reports")} className="underline hover:text-white">
+                    P&L & Reports →
+                  </button>
                   <button onClick={() => setActiveTab("analytics")} className="underline hover:text-white">
-                    View Complete Analytics →
+                    Charts →
                   </button>
                 </div>
               </div>
@@ -1597,8 +1859,20 @@ export default function FleetDashboardClient({
                   </button>
                 </div>
 
+                {loaded && buses.length === 0 && (
+                  <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center space-y-3">
+                    <p className="text-xs text-slate-400">No buses registered yet. Register your first vehicle to begin logging fares and expenses.</p>
+                    <button
+                      onClick={handleOpenAddBus}
+                      className="rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400"
+                    >
+                      + Register First Bus
+                    </button>
+                  </div>
+                )}
+
                 <div className="divide-y divide-slate-800">
-                  {buses.slice(0, 5).map((bus) => (
+                  {buses.slice(0, 6).map((bus) => (
                     <div
                       key={bus.id}
                       className="flex flex-col sm:flex-row sm:items-center justify-between py-3 gap-2 hover:bg-slate-800/30 px-2 rounded-lg transition-colors"
@@ -1636,11 +1910,41 @@ export default function FleetDashboardClient({
                   <h2 className="text-base font-bold text-white">Quick Actions</h2>
                   <div className="space-y-2">
                     <button
+                      onClick={handleOpenAddLog}
+                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>📝</span> Record Daily Route Fare
+                      </span>
+                      <span className="text-amber-400">+</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab("expenses")}
+                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>🧾</span> Record Operating Expense
+                      </span>
+                      <span className="text-amber-400">→</span>
+                    </button>
+
+                    <button
                       onClick={() => setActiveTab("maintenance")}
                       className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
                     >
                       <span className="flex items-center gap-2">
                         <span>🔧</span> Maintenance & Workshop Budget
+                      </span>
+                      <span className="text-amber-400">→</span>
+                    </button>
+
+                    <button
+                      onClick={() => setActiveTab("reports")}
+                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
+                    >
+                      <span className="flex items-center gap-2">
+                        <span>📑</span> P&L, Vehicle & Crew Reports
                       </span>
                       <span className="text-amber-400">→</span>
                     </button>
@@ -1654,26 +1958,6 @@ export default function FleetDashboardClient({
                       </span>
                       <span className="text-amber-400">+</span>
                     </button>
-
-                    <button
-                      onClick={handleOpenAddLog}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>📝</span> Record Daily Route Fare
-                      </span>
-                      <span className="text-amber-400">+</span>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab("sync")}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>⚡</span> Execute Day Close & Hub Sync
-                      </span>
-                      <span className="text-amber-400">→</span>
-                    </button>
                   </div>
                 </div>
               </div>
@@ -1682,14 +1966,16 @@ export default function FleetDashboardClient({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 2: BUSES (FULL EDIT & DELETE) */}
+        {/* TAB 2: BUSES & STATUTORY DOCUMENTS (FULL EDIT & DELETE) */}
         {/* ============================================================== */}
         {activeTab === "buses" && (
           <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold text-white">Fleet Inventory & Commercial Routing</h2>
-                <p className="text-xs text-slate-400">Manage commercial bus registrations, seating capacity, and status</p>
+                <h2 className="text-lg font-bold text-white">Fleet Inventory, Routing & Statutory Documents</h2>
+                <p className="text-xs text-slate-400">
+                  Manage registrations, routes, seating capacity, and expiry dates for Insurance, Revenue Licence, Route Permit, Emission & Fitness
+                </p>
               </div>
               <button
                 onClick={handleOpenAddBus}
@@ -1700,13 +1986,18 @@ export default function FleetDashboardClient({
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-slate-800">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider border-b border-slate-800">
                   <tr>
                     <th className="py-3 px-4">Reg Number</th>
                     <th className="py-3 px-4">Route Assignment</th>
-                    <th className="py-3 px-4">Seating</th>
-                    <th className="py-3 px-4">Operational Status</th>
+                    <th className="py-3 px-4">Seats</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-3">Insurance</th>
+                    <th className="py-3 px-3">Rev. Licence</th>
+                    <th className="py-3 px-3">Route Permit</th>
+                    <th className="py-3 px-3">Emission</th>
+                    <th className="py-3 px-3">Fitness</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1715,7 +2006,7 @@ export default function FleetDashboardClient({
                     <tr key={bus.id} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{bus.regNumber}</td>
                       <td className="py-3.5 px-4 font-medium">{bus.route}</td>
-                      <td className="py-3.5 px-4">{bus.capacity} seats</td>
+                      <td className="py-3.5 px-4">{bus.capacity}</td>
                       <td className="py-3.5 px-4">
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
@@ -1727,6 +2018,11 @@ export default function FleetDashboardClient({
                           {bus.status}
                         </span>
                       </td>
+                      <td className="py-3.5 px-3"><DocBadge date={bus.insuranceExpiry} today={todayStr} /></td>
+                      <td className="py-3.5 px-3"><DocBadge date={bus.revenueLicenseExpiry} today={todayStr} /></td>
+                      <td className="py-3.5 px-3"><DocBadge date={bus.routePermitExpiry} today={todayStr} /></td>
+                      <td className="py-3.5 px-3"><DocBadge date={bus.emissionTestExpiry} today={todayStr} /></td>
+                      <td className="py-3.5 px-3"><DocBadge date={bus.fitnessCertExpiry} today={todayStr} /></td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
@@ -1735,12 +2031,14 @@ export default function FleetDashboardClient({
                           >
                             ✏️ Edit
                           </button>
-                          <button
-                            onClick={() => handleDeleteBus(bus)}
-                            className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
-                          >
-                            🗑️ Delete
-                          </button>
+                          {isManager && (
+                            <button
+                              onClick={() => handleDeleteBus(bus)}
+                              className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
+                            >
+                              🗑️ Delete
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1752,24 +2050,37 @@ export default function FleetDashboardClient({
             {/* Bus Modal (Add / Edit) */}
             {showAddBusModal && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
+                <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center">
                     <h3 className="text-base font-bold text-white">
-                      {editingBus ? "Edit Fleet Vehicle" : "Register New Fleet Vehicle"}
+                      {editingBus ? "Edit Fleet Vehicle & Documents" : "Register New Fleet Vehicle"}
                     </h3>
                     <button onClick={() => setShowAddBusModal(false)} className="text-slate-400 hover:text-white">✕</button>
                   </div>
-                  <form onSubmit={handleSaveBus} className="space-y-4">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Registration Number</label>
-                      <input
-                        type="text"
-                        required
-                        value={busReg}
-                        onChange={(e) => setBusReg(e.target.value)}
-                        placeholder="e.g. WP NB-9912"
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
+                  <form onSubmit={handleSaveBus} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Registration Number</label>
+                        <input
+                          type="text"
+                          required
+                          value={busReg}
+                          onChange={(e) => setBusReg(e.target.value)}
+                          placeholder="e.g. WP NB-9912"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Seating Capacity</label>
+                        <input
+                          type="number"
+                          min="10"
+                          max="80"
+                          value={busCapacity}
+                          onChange={(e) => setBusCapacity(Number(e.target.value))}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
                     <div>
                       <label className="text-xs font-semibold text-slate-300">Assigned Route</label>
@@ -1782,17 +2093,60 @@ export default function FleetDashboardClient({
                         className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
                       />
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Seating Capacity</label>
-                      <input
-                        type="number"
-                        min="10"
-                        max="80"
-                        value={busCapacity}
-                        onChange={(e) => setBusCapacity(Number(e.target.value))}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
+
+                    <div className="pt-2 border-t border-slate-800">
+                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
+                        Statutory Document Expiry Dates (optional — alerts 30 days before expiry)
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs font-semibold text-slate-300">Insurance Expiry</label>
+                          <input
+                            type="date"
+                            value={busDocs.insuranceExpiry}
+                            onChange={(e) => setBusDocs({ ...busDocs, insuranceExpiry: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-300">Revenue Licence Expiry</label>
+                          <input
+                            type="date"
+                            value={busDocs.revenueLicenseExpiry}
+                            onChange={(e) => setBusDocs({ ...busDocs, revenueLicenseExpiry: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-300">Route Permit Expiry</label>
+                          <input
+                            type="date"
+                            value={busDocs.routePermitExpiry}
+                            onChange={(e) => setBusDocs({ ...busDocs, routePermitExpiry: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs font-semibold text-slate-300">Emission Test Expiry</label>
+                          <input
+                            type="date"
+                            value={busDocs.emissionTestExpiry}
+                            onChange={(e) => setBusDocs({ ...busDocs, emissionTestExpiry: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-xs font-semibold text-slate-300">Fitness Certificate Expiry</label>
+                          <input
+                            type="date"
+                            value={busDocs.fitnessCertExpiry}
+                            onChange={(e) => setBusDocs({ ...busDocs, fitnessCertExpiry: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                          />
+                        </div>
+                      </div>
                     </div>
+
                     {editingBus && (
                       <div className="flex items-center gap-2 pt-1">
                         <input
@@ -1831,56 +2185,92 @@ export default function FleetDashboardClient({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 3: DAILY ROUTE LOGS (FULL EDIT & DELETE) */}
+        {/* TAB 3: DAILY ROUTE LOGS (FULL EDIT & DELETE + KM & LITRES) */}
         {/* ============================================================== */}
         {activeTab === "logs" && (
           <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Daily Route Collections & Expenses (LKR)</h2>
-                <p className="text-xs text-slate-400">Logged fare turnouts, diesel refills, highway tolls, and crew commission</p>
+                <p className="text-xs text-slate-400">
+                  Logged fare turnouts, km run, diesel litres & cost, highway tolls, trip expenses, and crew commission ({settings.driverCommissionPct}% driver + {settings.conductorCommissionPct}% conductor)
+                </p>
               </div>
-              <button
-                onClick={handleOpenAddLog}
-                className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
-              >
-                + Record Daily Fare
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="month"
+                  value={logFilterMonth}
+                  onChange={(e) => setLogFilterMonth(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  title="Filter by month (clear for all)"
+                />
+                <select
+                  value={logFilterBus}
+                  onChange={(e) => setLogFilterBus(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                >
+                  <option value="">All Buses</option>
+                  {buses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.regNumber}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleOpenAddLog}
+                  className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
+                >
+                  + Record Daily Fare
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-slate-800">
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs whitespace-nowrap">
                 <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider border-b border-slate-800">
                   <tr>
-                    <th className="py-3 px-4">Bus</th>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Morning Fare (LKR)</th>
-                    <th className="py-3 px-4">Evening Fare (LKR)</th>
-                    <th className="py-3 px-4 text-emerald-400">Total Fare (LKR)</th>
-                    <th className="py-3 px-4 text-rose-400">Fuel (LKR)</th>
-                    <th className="py-3 px-4 text-rose-400">Tolls (LKR)</th>
-                    <th className="py-3 px-4">Commission (LKR)</th>
-                    <th className="py-3 px-4 text-amber-400 font-bold">Net Bus Profit (LKR)</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-3 px-3">Bus</th>
+                    <th className="py-3 px-3">Date</th>
+                    <th className="py-3 px-3">Morning</th>
+                    <th className="py-3 px-3">Evening</th>
+                    <th className="py-3 px-3 text-emerald-400">Total Fare</th>
+                    <th className="py-3 px-3">Km / Fuel</th>
+                    <th className="py-3 px-3 text-rose-400">Fuel Cost</th>
+                    <th className="py-3 px-3 text-rose-400">Tolls / Other</th>
+                    <th className="py-3 px-3">Commission</th>
+                    <th className="py-3 px-3 text-amber-400 font-bold">Net Profit</th>
+                    <th className="py-3 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-200">
-                  {routeLogs.map((log) => {
+                  {visibleLogs.map((log) => {
                     const gross = log.morningCollection + log.eveningCollection;
-                    const exp = log.fuelCost + log.tollFees + log.commission;
+                    const other = log.otherExpenses ?? 0;
+                    const exp = log.fuelCost + log.tollFees + other + log.commission;
                     const profit = gross - exp;
+                    const kml = log.fuelLiters && log.kmRun ? (log.kmRun / log.fuelLiters).toFixed(2) : null;
                     return (
                       <tr key={log.id} className="hover:bg-slate-800/40 transition-colors">
-                        <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{log.busReg}</td>
-                        <td className="py-3.5 px-4 text-slate-400 font-mono">{log.date}</td>
-                        <td className="py-3.5 px-4">{formatLKR(log.morningCollection)}</td>
-                        <td className="py-3.5 px-4">{formatLKR(log.eveningCollection)}</td>
-                        <td className="py-3.5 px-4 font-semibold text-emerald-400">{formatLKR(gross)}</td>
-                        <td className="py-3.5 px-4 text-rose-300">-{formatLKR(log.fuelCost)}</td>
-                        <td className="py-3.5 px-4 text-rose-300">-{formatLKR(log.tollFees)}</td>
-                        <td className="py-3.5 px-4">-{formatLKR(log.commission)}</td>
-                        <td className="py-3.5 px-4 font-bold text-amber-400">{formatLKR(profit)}</td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3.5 px-3 font-mono font-bold text-amber-400">
+                          <div>{log.busReg}</div>
+                          {log.notes && <div className="text-[10px] font-sans font-normal text-slate-500">{log.notes}</div>}
+                        </td>
+                        <td className="py-3.5 px-3 text-slate-400 font-mono">{log.date}</td>
+                        <td className="py-3.5 px-3">{formatLKR(log.morningCollection)}</td>
+                        <td className="py-3.5 px-3">{formatLKR(log.eveningCollection)}</td>
+                        <td className="py-3.5 px-3 font-semibold text-emerald-400">{formatLKR(gross)}</td>
+                        <td className="py-3.5 px-3 font-mono text-slate-400">
+                          {log.kmRun ? `${log.kmRun} km` : "—"}
+                          {log.fuelLiters ? ` / ${log.fuelLiters}L` : ""}
+                          {kml && <div className="text-[10px] text-emerald-400">{kml} km/L</div>}
+                        </td>
+                        <td className="py-3.5 px-3 text-rose-300">-{formatLKR(log.fuelCost)}</td>
+                        <td className="py-3.5 px-3 text-rose-300">-{formatLKR(log.tollFees + other)}</td>
+                        <td className="py-3.5 px-3">-{formatLKR(log.commission)}</td>
+                        <td className={`py-3.5 px-3 font-bold ${profit >= 0 ? "text-amber-400" : "text-rose-400"}`}>
+                          {formatLKR(profit)}
+                        </td>
+                        <td className="py-3.5 px-3 text-right">
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               onClick={() => handleOpenEditLog(log)}
@@ -1906,7 +2296,7 @@ export default function FleetDashboardClient({
             {/* Route Log Modal (Add / Edit) */}
             {showAddLogModal && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
+                <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
                   <div className="flex justify-between items-center">
                     <h3 className="text-base font-bold text-white">
                       {editingLog ? "Edit Daily Bus Turnout" : "Record Daily Bus Turnout (LKR)"}
@@ -1914,31 +2304,32 @@ export default function FleetDashboardClient({
                     <button onClick={() => setShowAddLogModal(false)} className="text-slate-400 hover:text-white">✕</button>
                   </div>
                   <form onSubmit={handleSaveLog} className="space-y-3">
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Select Bus</label>
-                      <select
-                        required
-                        value={logBusId}
-                        onChange={(e) => setLogBusId(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      >
-                        {buses.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.regNumber} - {b.route}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Date of Turnout</label>
-                      <input
-                        type="date"
-                        required
-                        value={logDate}
-                        onChange={(e) => setLogDate(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Select Bus</label>
+                        <select
+                          required
+                          value={logBusId}
+                          onChange={(e) => setLogBusId(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        >
+                          {buses.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.regNumber} - {b.route}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Date of Turnout</label>
+                        <input
+                          type="date"
+                          required
+                          value={logDate}
+                          onChange={(e) => setLogDate(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -1947,6 +2338,7 @@ export default function FleetDashboardClient({
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
                           required
                           value={logMorning}
                           onChange={(e) => setLogMorning(e.target.value)}
@@ -1959,6 +2351,7 @@ export default function FleetDashboardClient({
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
                           required
                           value={logEvening}
                           onChange={(e) => setLogEvening(e.target.value)}
@@ -1974,6 +2367,7 @@ export default function FleetDashboardClient({
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
                           value={logFuel}
                           onChange={(e) => setLogFuel(e.target.value)}
                           placeholder="18500.00"
@@ -1985,12 +2379,87 @@ export default function FleetDashboardClient({
                         <input
                           type="number"
                           step="0.01"
+                          min="0"
                           value={logTolls}
                           onChange={(e) => setLogTolls(e.target.value)}
                           placeholder="1200.00"
                           className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
                         />
                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Distance Run (km)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={logKmRun}
+                          onChange={(e) => setLogKmRun(e.target.value)}
+                          placeholder="220"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Diesel Litres (L)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={logFuelLiters}
+                          onChange={(e) => setLogFuelLiters(e.target.value)}
+                          placeholder="55"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Other Trip Cost (LKR)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={logOtherExpenses}
+                          onChange={(e) => setLogOtherExpenses(e.target.value)}
+                          placeholder="0.00"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300">Notes (optional)</label>
+                      <input
+                        type="text"
+                        value={logNotes}
+                        onChange={(e) => setLogNotes(e.target.value)}
+                        placeholder="e.g. 4 round trips, rain delay in evening"
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                      />
+                    </div>
+
+                    {/* Live Calculation Preview */}
+                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs space-y-1">
+                      <div className="flex justify-between text-slate-400">
+                        <span>Gross Collection:</span>
+                        <span className="font-mono font-semibold text-emerald-400">{formatLKR(logPreview.gross)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-400">
+                        <span>Driver ({settings.driverCommissionPct}%) + Conductor ({settings.conductorCommissionPct}%) Commission:</span>
+                        <span className="font-mono text-rose-300">-{formatLKR(logPreview.comm)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-white border-t border-slate-800 pt-1">
+                        <span>Net Bus Profit:</span>
+                        <span className={`font-mono ${logPreview.net >= 0 ? "text-amber-400" : "text-rose-400"}`}>
+                          {formatLKR(logPreview.net)}
+                        </span>
+                      </div>
+                      {(logPreview.kmPerLiter > 0 || logPreview.costPerKm > 0) && (
+                        <div className="flex justify-between text-[11px] text-slate-400 pt-0.5">
+                          <span>Efficiency: {logPreview.kmPerLiter ? `${logPreview.kmPerLiter.toFixed(2)} km/L` : "—"}</span>
+                          <span>Cost/km: {logPreview.costPerKm ? formatLKR(logPreview.costPerKm) : "—"}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="flex justify-end gap-2 pt-2">
@@ -2017,40 +2486,75 @@ export default function FleetDashboardClient({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 5: CREW & ATTENDANCE (FULL EDIT & DELETE) */}
+        {/* TAB 5: CREW & ATTENDANCE (FULL EDIT & DELETE + DAILY ROSTER) */}
         {/* ============================================================== */}
         {activeTab === "crew" && (
           <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Crew Attendance & Payroll (LKR)</h2>
-                <p className="text-xs text-slate-400">Driver and conductor daily wages, advances, and balance settlements</p>
+                <p className="text-xs text-slate-400">
+                  Daily attendance, base wages (Driver: {formatCompactLKR(settings.driverBaseWage)}, Conductor: {formatCompactLKR(settings.conductorBaseWage)}), advances, and balance owed
+                </p>
               </div>
-              <button
-                onClick={handleOpenAddCrew}
-                className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
-              >
-                + Register Crew Member
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="date"
+                  value={crewFilterDate}
+                  onChange={(e) => setCrewFilterDate(e.target.value)}
+                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                  title="Filter by attendance date (clear for all)"
+                />
+                {crewFilterDate && (
+                  <button
+                    onClick={() => setCrewFilterDate("")}
+                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
+                  >
+                    Show All Dates
+                  </button>
+                )}
+                <button
+                  onClick={handleCopyPreviousCrew}
+                  disabled={copyingCrew}
+                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                  title="Copy previous day's crew roster onto the selected date"
+                >
+                  {copyingCrew ? "Copying..." : `📋 Copy Roster to ${crewFilterDate || todayStr}`}
+                </button>
+                <button
+                  onClick={handleOpenAddCrew}
+                  className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
+                >
+                  + Mark Crew Attendance
+                </button>
+              </div>
             </div>
 
             <div className="overflow-x-auto rounded-xl border border-slate-800">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider border-b border-slate-800">
                   <tr>
+                    <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-4">Crew Member</th>
                     <th className="py-3 px-4">Role</th>
                     <th className="py-3 px-4">Assigned Bus</th>
-                    <th className="py-3 px-4">Base Daily Wage (LKR)</th>
+                    <th className="py-3 px-4">Daily Wage (LKR)</th>
                     <th className="py-3 px-4">Advance Paid (LKR)</th>
                     <th className="py-3 px-4 text-amber-400 font-bold">Balance Owed (LKR)</th>
-                    <th className="py-3 px-4">Attendance</th>
                     <th className="py-3 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-slate-200">
-                  {crewRoster.map((c) => (
+                  {visibleCrew.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="py-6 text-center text-slate-500">
+                        No attendance records for {crewFilterDate || "this filter"}. Click &ldquo;📋 Copy Roster&rdquo; or &ldquo;+ Mark Crew Attendance&rdquo;.
+                      </td>
+                    </tr>
+                  )}
+                  {visibleCrew.map((c) => (
                     <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 px-4 font-mono text-slate-400">{c.date}</td>
                       <td className="py-3.5 px-4 font-semibold text-white">{c.name}</td>
                       <td className="py-3.5 px-4">
                         <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-mono font-semibold">{c.role}</span>
@@ -2059,12 +2563,6 @@ export default function FleetDashboardClient({
                       <td className="py-3.5 px-4">{formatLKR(c.wage)}</td>
                       <td className="py-3.5 px-4 text-rose-300">{formatLKR(c.advance)}</td>
                       <td className="py-3.5 px-4 font-bold text-amber-400">{formatLKR(c.balance)}</td>
-                      <td className="py-3.5 px-4">
-                        <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
-                          Present
-                        </span>
-                      </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           <button
@@ -2093,11 +2591,41 @@ export default function FleetDashboardClient({
                 <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
                   <div className="flex justify-between items-center">
                     <h3 className="text-base font-bold text-white">
-                      {editingCrew ? "Edit Crew Member Details" : "Register Crew Member"}
+                      {editingCrew ? "Edit Crew Attendance" : "Mark Crew Attendance"}
                     </h3>
                     <button onClick={() => setShowCrewModal(false)} className="text-slate-400 hover:text-white">✕</button>
                   </div>
                   <form onSubmit={handleSaveCrew} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Date</label>
+                        <input
+                          type="date"
+                          required
+                          value={crewDate}
+                          onChange={(e) => setCrewDate(e.target.value)}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Operational Role</label>
+                        <select
+                          value={crewRole}
+                          onChange={(e) => {
+                            const r = e.target.value as "DRIVER" | "CONDUCTOR";
+                            setCrewRole(r);
+                            if (!editingCrew) {
+                              setCrewWage(String(r === "DRIVER" ? settings.driverBaseWage : settings.conductorBaseWage));
+                            }
+                          }}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        >
+                          <option value="DRIVER">Driver</option>
+                          <option value="CONDUCTOR">Conductor</option>
+                        </select>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="text-xs font-semibold text-slate-300">Employee Full Name</label>
                       <input
@@ -2108,18 +2636,6 @@ export default function FleetDashboardClient({
                         placeholder="e.g. Ruwan Jayawardena"
                         className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
                       />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Operational Role</label>
-                      <select
-                        value={crewRole}
-                        onChange={(e) => setCrewRole(e.target.value as any)}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      >
-                        <option value="DRIVER">Driver</option>
-                        <option value="CONDUCTOR">Conductor</option>
-                      </select>
                     </div>
 
                     <div>
@@ -2143,7 +2659,8 @@ export default function FleetDashboardClient({
                         <label className="text-xs font-semibold text-slate-300">Daily Wage (LKR)</label>
                         <input
                           type="number"
-                          step="100"
+                          step="50"
+                          min="0"
                           required
                           value={crewWage}
                           onChange={(e) => setCrewWage(e.target.value)}
@@ -2155,13 +2672,21 @@ export default function FleetDashboardClient({
                         <label className="text-xs font-semibold text-slate-300">Advance Paid (LKR)</label>
                         <input
                           type="number"
-                          step="100"
+                          step="50"
+                          min="0"
                           value={crewAdvance}
                           onChange={(e) => setCrewAdvance(e.target.value)}
                           placeholder="0"
                           className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
                         />
                       </div>
+                    </div>
+
+                    <div className="flex justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
+                      <span className="text-slate-400">Balance Owed for Day:</span>
+                      <span className="font-mono font-bold text-amber-400">
+                        {formatLKR((Number(crewWage) || 0) - (Number(crewAdvance) || 0))}
+                      </span>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-2">
@@ -2177,7 +2702,7 @@ export default function FleetDashboardClient({
                         disabled={submittingCrew}
                         className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-50"
                       >
-                        {submittingCrew ? "Saving..." : editingCrew ? "Save Changes" : "Save Member"}
+                        {submittingCrew ? "Saving..." : editingCrew ? "Save Changes" : "Save Attendance"}
                       </button>
                     </div>
                   </form>
@@ -2192,40 +2717,55 @@ export default function FleetDashboardClient({
         {/* ============================================================== */}
         {activeTab === "sync" && (
           <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div>
-              <h2 className="text-lg font-bold text-white">Central Admin Hub Synchronizer</h2>
-              <p className="text-xs text-slate-400">
-                Calculates and records `DailyFleetSummary` in MongoDB and dispatches to the Central Hub
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-white">Day Close & Central Admin Hub Synchronizer</h2>
+                <p className="text-xs text-slate-400">
+                  Calculates and persists `DailyFleetSummary` in MongoDB for the selected operating day
+                </p>
+              </div>
+              <input
+                type="date"
+                value={syncDate}
+                onChange={(e) => {
+                  setSyncDate(e.target.value);
+                  setSyncStatus("idle");
+                }}
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+              />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 space-y-4">
-                <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">Audit Summary (Month to Date - LKR)</h3>
+                <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
+                  Day Closing Summary ({syncDate} — LKR)
+                </h3>
                 <div className="space-y-2 text-xs divide-y divide-slate-800">
                   <div className="flex justify-between py-1.5 text-slate-300">
                     <span>Total Route Collections:</span>
-                    <span className="font-mono font-semibold text-emerald-400">{formatLKR(filteredData.grossRevenue)}</span>
+                    <span className="font-mono font-semibold text-emerald-400">{formatLKR(syncDayReport.revenue)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
                     <span>Fuel Expenses:</span>
-                    <span className="font-mono text-rose-400">-{formatLKR(filteredData.totalFuel)}</span>
+                    <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.fuel)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Tolls & Line Fees:</span>
-                    <span className="font-mono text-rose-400">-{formatLKR(filteredData.totalTolls)}</span>
+                    <span>Tolls & Other Trip Costs:</span>
+                    <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.tolls + syncDayReport.tripOther)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Commissions:</span>
-                    <span className="font-mono text-rose-400">-{formatLKR(filteredData.totalCommissions)}</span>
+                    <span>Crew Commissions & Wages:</span>
+                    <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.commission + syncDayReport.crewWages)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Maintenance & Repairs:</span>
-                    <span className="font-mono text-rose-400">-{formatLKR(filteredData.totalMaintenanceCost)}</span>
+                    <span>Maintenance & Operating Expenses:</span>
+                    <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.maintenance + syncDayReport.generalExpenses)}</span>
                   </div>
                   <div className="flex justify-between py-2 text-sm font-bold text-white pt-3 border-t-2 border-slate-700">
                     <span>Net Closing Balance:</span>
-                    <span className="font-mono text-amber-400">{formatLKR(filteredData.netProfit)}</span>
+                    <span className={`font-mono ${syncDayReport.net >= 0 ? "text-amber-400" : "text-rose-400"}`}>
+                      {formatLKR(syncDayReport.net)}
+                    </span>
                   </div>
                 </div>
 
@@ -2237,8 +2777,8 @@ export default function FleetDashboardClient({
                   {syncStatus === "syncing"
                     ? "Persisting to MongoDB & Pushing to Hub..."
                     : syncStatus === "synced"
-                    ? "Successfully Synced with Central Hub ✓"
-                    : "Execute Day Close & Hub Sync"}
+                    ? `Successfully Closed & Synced (${syncDate}) ✓`
+                    : `Execute Day Close & Hub Sync (${syncDate})`}
                 </button>
               </div>
 
@@ -2251,16 +2791,16 @@ export default function FleetDashboardClient({
                   {JSON.stringify(
                     {
                       currency: "LKR",
-                      date: new Date().toISOString().split("T")[0],
-                      totalCollection: filteredData.grossRevenue.toFixed(2),
-                      totalExpenses: filteredData.totalExpenses.toFixed(2),
+                      date: syncDate,
+                      totalCollection: syncDayReport.revenue.toFixed(2),
+                      totalExpenses: syncDayReport.totalExpenses.toFixed(2),
                       expenseBreakdown: {
-                        fuel: filteredData.totalFuel.toFixed(2),
-                        tollAndLineFees: filteredData.totalTolls.toFixed(2),
-                        crewPay: filteredData.totalCommissions.toFixed(2),
-                        maintenance: filteredData.totalMaintenanceCost.toFixed(2),
+                        fuel: syncDayReport.fuel.toFixed(2),
+                        tollAndLineFees: (syncDayReport.tolls + syncDayReport.tripOther).toFixed(2),
+                        crewPay: (syncDayReport.commission + syncDayReport.crewWages).toFixed(2),
+                        maintenance: (syncDayReport.maintenance + syncDayReport.generalExpenses).toFixed(2),
                       },
-                      netProfit: filteredData.netProfit.toFixed(2),
+                      netProfit: syncDayReport.net.toFixed(2),
                       source: "fleet-management",
                     },
                     null,
@@ -2272,6 +2812,15 @@ export default function FleetDashboardClient({
           </div>
         )}
       </div>
+
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          canEdit={isManager}
+          onClose={() => setShowSettings(false)}
+          onSaved={loadData}
+        />
+      )}
     </div>
   );
 }

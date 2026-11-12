@@ -35,12 +35,21 @@ model BusVehicle {
   routeName          String
   seatingCapacity    Int
   isActive           Boolean  @default(true)
+
+  // Statutory document expiry dates (Sri Lanka)
+  insuranceExpiry      DateTime?
+  revenueLicenseExpiry DateTime?
+  routePermitExpiry    DateTime?
+  emissionTestExpiry   DateTime?
+  fitnessCertExpiry    DateTime?
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   dailyRouteLogs        DailyRouteLog[]
   maintenanceLogs       BusMaintenanceLog[]
   crewAttendancePayroll CrewAttendancePayroll[]
+  fleetExpenses         FleetExpense[]
 
   @@index([isActive])
 }
@@ -56,6 +65,10 @@ model DailyRouteLog {
   tollAndLineFees     Float
   conductorCommission Float
   driverCommission    Float
+  kmRun               Float?
+  fuelLiters          Float?
+  otherExpenses       Float?
+  notes               String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -72,6 +85,9 @@ model BusMaintenanceLog {
   serviceType String
   cost        Float
   vendorName  String
+  odometerKm      Float?
+  nextServiceDate DateTime?
+  notes           String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -106,6 +122,34 @@ model CrewRate {
   commissionPercent Float
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+/// General operating expenses not captured in daily logs / workshop
+/// (insurance, revenue licence, permits, lease installments, tyres, parking, office, etc.)
+model FleetExpense {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  date        DateTime
+  category    String
+  description String
+  amount      Float
+  paidTo      String?
+  busId       String?  @db.ObjectId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  bus BusVehicle? @relation(fields: [busId], references: [id], onDelete: SetNull)
+
+  @@index([date])
+  @@index([busId])
+  @@index([category])
+}
+
+/// Key/value application settings (commission rates, budgets)
+model AppSetting {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
 }
 
 model DailyFleetSummary {

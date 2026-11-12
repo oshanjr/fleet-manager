@@ -44,3 +44,25 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+  }
+  header,
+  .no-print {
+    display: none !important;
+  }
+  .print-area {
+    border: 1px solid #cbd5e1 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+  }
+  .print-area * {
+    color: #0f172a !important;
+    border-color: #e2e8f0 !important;
+    background: transparent !important;
+  }
+}

@@ -82,6 +82,7 @@ export default function FleetDashboardClient({
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
@@ -916,21 +917,90 @@ export default function FleetDashboardClient({
     return Math.max(maxRev, maxExp, 10000);
   }, [filteredData.timelineData]);
 
+  const navSections = [
+    {
+      title: "Analytics & Reports",
+      items: [
+        { id: "overview", label: "Fleet Overview", icon: "📊" },
+        { id: "analytics", label: "Daily & Monthly Analytics", icon: "📈" },
+        { id: "reports", label: "Financial Reports", icon: "📑" },
+      ],
+    },
+    {
+      title: "Operations",
+      items: [
+        { id: "logs", label: "Daily Route Fares", icon: "📋" },
+        { id: "maintenance", label: "Maintenance & Budget", icon: "🔧" },
+        { id: "expenses", label: "Operating Expenses", icon: "🧾" },
+      ],
+    },
+    {
+      title: "People & Fleet",
+      items: [
+        { id: "crew", label: "Employees & Payroll", icon: "👥" },
+        { id: "buses", label: "Vehicles & Documents", icon: "🚍" },
+        { id: "sync", label: "Central Hub Sync", icon: "🔄" },
+      ],
+    },
+  ] as const;
+
+  const renderNavItems = (onSelect?: () => void) => (
+    <nav className="flex-1 space-y-5 px-3 py-4 overflow-y-auto">
+      {navSections.map((section) => (
+        <div key={section.title} className="space-y-1">
+          <div className="px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            {section.title}
+          </div>
+          {section.items.map((item) => {
+            const active = activeTab === item.id;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  onSelect?.();
+                }}
+                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-all ${
+                  active
+                    ? "bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-sm"
+                    : "border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
+                }`}
+              >
+                <span className="text-base leading-none">{item.icon}</span>
+                <span className="truncate">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
+  );
+
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100">
       {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b border-slate-800 bg-slate-900/90 backdrop-blur-md px-6 py-3.5">
-        <div className="mx-auto flex max-w-7xl items-center justify-between">
+      <header className="no-print sticky top-0 z-30 border-b border-slate-800 bg-slate-900/95 backdrop-blur-md px-4 sm:px-6 py-3">
+        <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 font-black shadow-lg shadow-amber-500/20">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 hover:text-white"
+              aria-label="Open navigation menu"
+            >
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-500 to-amber-300 text-slate-950 font-black shadow-lg shadow-amber-500/20">
+              <svg className="h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
               </svg>
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight text-white">FleetFlow Manager</h1>
-                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/20">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">FleetFlow Manager</h1>
+                <span className="hidden sm:inline-block rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/20">
                   LKR Currency (Rs.)
                 </span>
                 <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
@@ -938,20 +1008,20 @@ export default function FleetDashboardClient({
                   Live Dispatch
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400">Bus Operations, Workshop Servicing, Budget & Financials (LKR)</p>
+              <p className="hidden sm:block text-[11px] text-slate-400">Bus Operations, Workshop Servicing, Budget & Financials (LKR)</p>
             </div>
           </div>
 
           {/* User profile, Settings & Logout */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setShowSettings(true)}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition-colors"
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition-colors"
               title="Commission Rates, Base Wages & Monthly Budgets"
             >
-              ⚙️ Settings
+              ⚙️ <span className="hidden sm:inline">Settings</span>
             </button>
-            <div className="text-right">
+            <div className="hidden sm:block text-right">
               <div className="text-xs font-bold text-white">{currentUser.name}</div>
               <div className="text-[10px] font-mono text-amber-400">
                 {currentUser.role === "FLEET_MANAGER" ? "Fleet Manager (Admin)" : "Dispatch Supervisor"}
@@ -959,7 +1029,7 @@ export default function FleetDashboardClient({
             </div>
             <button
               onClick={handleLogout}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+              className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
             >
               Log Out
             </button>
@@ -967,8 +1037,54 @@ export default function FleetDashboardClient({
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <div className="mx-auto w-full max-w-7xl px-6 py-6 space-y-6">
+      {/* Mobile Slide-Over Sidebar */}
+      {sidebarOpen && (
+        <div className="no-print fixed inset-0 z-50 flex lg:hidden">
+          <div
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+            onClick={() => setSidebarOpen(false)}
+          />
+          <aside className="relative z-10 flex w-64 flex-col border-r border-slate-800 bg-slate-900 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3.5">
+              <span className="text-sm font-bold text-white">Navigation</span>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            {renderNavItems(() => setSidebarOpen(false))}
+            <div className="border-t border-slate-800 p-3 text-xs text-slate-400">
+              <div className="font-semibold text-white">{currentUser.name}</div>
+              <div className="text-[10px] text-amber-400">
+                {currentUser.role === "FLEET_MANAGER" ? "Fleet Manager" : "Dispatch Supervisor"}
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {/* Body: Desktop Sidebar + Main Content */}
+      <div className="flex flex-1">
+        {/* Desktop Sidebar */}
+        <aside className="no-print hidden lg:flex lg:w-64 lg:flex-col lg:shrink-0 border-r border-slate-800 bg-slate-900/50 sticky top-[65px] h-[calc(100vh-65px)]">
+          {renderNavItems()}
+          <div className="border-t border-slate-800 p-3">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="w-full flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
+            >
+              <span>⚙️</span>
+              <span>Rates &amp; Budgets</span>
+            </button>
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 min-w-0 px-4 sm:px-6 py-6 space-y-6">
+          <div className="mx-auto max-w-7xl space-y-6">
         {loadError && (
           <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-300 flex items-center justify-between">
             <span>⚠️ {loadError}</span>
@@ -977,34 +1093,6 @@ export default function FleetDashboardClient({
             </button>
           </div>
         )}
-
-        {/* Navigation Tabs with hidden scrollbar */}
-        <div className="no-print flex border-b border-slate-800 space-x-1 sm:space-x-2 overflow-x-auto no-scrollbar scroll-smooth">
-          {[
-            { id: "overview", label: "Fleet Overview", icon: "📊" },
-            { id: "analytics", label: "Daily & Monthly Analytics", icon: "📈" },
-            { id: "reports", label: "Financial Reports", icon: "📑" },
-            { id: "logs", label: "Daily Route Fares", icon: "📋" },
-            { id: "maintenance", label: "Maintenance & Budget", icon: "🔧" },
-            { id: "expenses", label: "Operating Expenses", icon: "🧾" },
-            { id: "crew", label: "Employees & Payroll", icon: "👥" },
-            { id: "buses", label: "Vehicles & Documents", icon: "🚍" },
-            { id: "sync", label: "Central Hub Sync", icon: "🔄" },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`flex items-center gap-2 whitespace-nowrap rounded-t-xl px-4 py-2.5 text-sm font-semibold transition-all border-b-2 ${
-                activeTab === tab.id
-                  ? "border-amber-500 bg-slate-900 text-amber-400 shadow-sm"
-                  : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/40"
-              }`}
-            >
-              <span>{tab.icon}</span>
-              {tab.label}
-            </button>
-          ))}
-        </div>
 
         {/* ============================================================== */}
         {/* TAB: OPERATING EXPENSES */}
@@ -2606,6 +2694,8 @@ export default function FleetDashboardClient({
             </div>
           </div>
         )}
+          </div>
+        </main>
       </div>
 
       {showSettings && (

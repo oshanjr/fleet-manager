@@ -132,32 +132,50 @@ export async function updateSettingsAction(
 export async function getFleetDataAction() {
   try {
     await requireUser();
-    const [buses, routeLogs, maintenanceRecords, crewRoster, expenses, summary, settings] =
-      await Promise.all([
-        prisma.busVehicle.findMany({ orderBy: { createdAt: "desc" } }),
-        prisma.dailyRouteLog.findMany({
-          include: { bus: true },
-          orderBy: { date: "desc" },
-          take: 3000,
-        }),
-        prisma.busMaintenanceLog.findMany({
-          include: { bus: true },
-          orderBy: { date: "desc" },
-          take: 2000,
-        }),
-        prisma.crewAttendancePayroll.findMany({
-          include: { bus: true },
-          orderBy: { date: "desc" },
-          take: 5000,
-        }),
-        prisma.fleetExpense.findMany({
-          include: { bus: true },
-          orderBy: { date: "desc" },
-          take: 2000,
-        }),
-        prisma.dailyFleetSummary.findFirst({ orderBy: { date: "desc" } }),
-        loadSettings(),
-      ]);
+    const [
+      buses,
+      routeLogs,
+      maintenanceRecords,
+      crewRoster,
+      expenses,
+      summary,
+      settings,
+      employees,
+      salaryPayments,
+    ] = await Promise.all([
+      prisma.busVehicle.findMany({ orderBy: { createdAt: "desc" } }),
+      prisma.dailyRouteLog.findMany({
+        include: { bus: true },
+        orderBy: { date: "desc" },
+        take: 3000,
+      }),
+      prisma.busMaintenanceLog.findMany({
+        include: { bus: true },
+        orderBy: { date: "desc" },
+        take: 2000,
+      }),
+      prisma.crewAttendancePayroll.findMany({
+        include: { bus: true },
+        orderBy: { date: "desc" },
+        take: 5000,
+      }),
+      prisma.fleetExpense.findMany({
+        include: { bus: true },
+        orderBy: { date: "desc" },
+        take: 2000,
+      }),
+      prisma.dailyFleetSummary.findFirst({ orderBy: { date: "desc" } }),
+      loadSettings(),
+      prisma.employee.findMany({
+        include: { bus: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      prisma.salaryPayment.findMany({
+        include: { employee: true },
+        orderBy: { paymentDate: "desc" },
+        take: 2000,
+      }),
+    ]);
 
     return {
       success: true as const,
@@ -209,6 +227,7 @@ export async function getFleetDataAction() {
         })),
         crewRoster: crewRoster.map((c) => ({
           id: c.id,
+          employeeId: c.employeeId ?? null,
           busId: c.busId,
           name: c.employeeName,
           role: c.role,
@@ -217,7 +236,36 @@ export async function getFleetDataAction() {
           advance: c.advanceTaken,
           balance: c.balanceOwed,
           date: dayStr(c.date),
-          present: true,
+          status: c.status,
+          present: c.status !== "ABSENT",
+        })),
+        employees: employees.map((e) => ({
+          id: e.id,
+          name: e.name,
+          role: e.role,
+          phone: e.phone ?? "",
+          nic: e.nic ?? "",
+          licenseNumber: e.licenseNumber ?? "",
+          salaryType: e.salaryType,
+          baseSalary: e.baseSalary,
+          busId: e.busId,
+          assignedBus: e.bus ? e.bus.registrationNumber : "Unassigned",
+          isActive: e.isActive,
+          joinedDate: dayStr(e.joinedDate),
+          notes: e.notes ?? "",
+        })),
+        salaryPayments: salaryPayments.map((p) => ({
+          id: p.id,
+          employeeId: p.employeeId,
+          employeeName: p.employee ? p.employee.name : "Unknown",
+          paymentDate: dayStr(p.paymentDate),
+          periodMonth: p.periodMonth,
+          grossEarned: p.grossEarned,
+          bonus: p.bonus,
+          deductions: p.deductions,
+          netPaid: p.netPaid,
+          paymentMethod: p.paymentMethod,
+          notes: p.notes ?? "",
         })),
         expenses: expenses.map((e) => ({
           id: e.id,
@@ -479,22 +527,29 @@ export async function deleteMaintenanceAction(id: string): Promise<ActionResult<
 // Each record = one crew member's attendance for one day.
 // ============================================================================
 export interface CrewInput {
+  employeeId?: string;
   employeeName: string;
   role: "DRIVER" | "CONDUCTOR";
   dailyWage: number;
   advanceTaken: number;
   busId?: string;
   date: string;
+  status?: "PRESENT" | "HALF_DAY" | "ABSENT";
 }
 
 function crewData(input: CrewInput) {
   const name = (input.employeeName || "").trim();
   if (!name) throw new Error("Employee name is required.");
   if (input.role !== "DRIVER" && input.role !== "CONDUCTOR") throw new Error("Invalid crew role.");
+  const status = input.status ?? "PRESENT";
+  if (status !== "PRESENT" && status !== "HALF_DAY" && status !== "ABSENT") {
+    throw new Error("Invalid attendance status.");
+  }
   const wage = num(input.dailyWage);
   const advance = num(input.advanceTaken);
   if (wage < 0 || advance < 0) throw new Error("Wage and advance cannot be negative.");
   return {
+    employeeId: input.employeeId ? input.employeeId : null,
     employeeName: name,
     role: input.role,
     dailyWage: wage,
@@ -502,6 +557,7 @@ function crewData(input: CrewInput) {
     balanceOwed: Number((wage - advance).toFixed(2)),
     busId: input.busId ? input.busId : null,
     date: toDayDate(input.date),
+    status,
   };
 }
 
@@ -574,6 +630,7 @@ export async function copyCrewToDateAction(
       .filter((r) => !skip.has(r.employeeName))
       .filter((r) => !names || names.includes(r.employeeName))
       .map((r) => ({
+        employeeId: r.employeeId,
         employeeName: r.employeeName,
         role: r.role,
         dailyWage: r.dailyWage,
@@ -581,11 +638,267 @@ export async function copyCrewToDateAction(
         balanceOwed: r.dailyWage,
         busId: r.busId,
         date: target,
+        status: "PRESENT" as const,
       }));
 
     if (rows.length) await prisma.crewAttendancePayroll.createMany({ data: rows });
     revalidatePath("/");
     return { success: true, data: { created: rows.length } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+// ============================================================================
+// EMPLOYEE ROSTER, SALARY SETUP, BULK ATTENDANCE & SALARY PAYMENTS
+// ============================================================================
+export interface EmployeeInput {
+  name: string;
+  role: "DRIVER" | "CONDUCTOR";
+  phone?: string;
+  nic?: string;
+  licenseNumber?: string;
+  salaryType: "DAILY" | "MONTHLY";
+  baseSalary: number;
+  busId?: string;
+  isActive?: boolean;
+  joinedDate?: string;
+  notes?: string;
+}
+
+function employeeData(input: EmployeeInput) {
+  const name = (input.name || "").trim();
+  if (!name) throw new Error("Employee name is required.");
+  if (input.role !== "DRIVER" && input.role !== "CONDUCTOR") throw new Error("Invalid employee role.");
+  if (input.salaryType !== "DAILY" && input.salaryType !== "MONTHLY") {
+    throw new Error("Invalid salary type.");
+  }
+  const baseSalary = num(input.baseSalary);
+  if (baseSalary < 0) throw new Error("Base salary / wage cannot be negative.");
+  return {
+    name,
+    role: input.role,
+    phone: optStr(input.phone),
+    nic: optStr(input.nic),
+    licenseNumber: optStr(input.licenseNumber),
+    salaryType: input.salaryType,
+    baseSalary,
+    busId: input.busId ? input.busId : null,
+    isActive: input.isActive !== false,
+    joinedDate: toDayDate(input.joinedDate),
+    notes: optStr(input.notes),
+  };
+}
+
+export async function addEmployeeAction(input: EmployeeInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireUser();
+    const emp = await prisma.employee.create({ data: employeeData(input) });
+    revalidatePath("/");
+    return { success: true, data: { id: emp.id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function updateEmployeeAction(
+  id: string,
+  input: EmployeeInput
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireUser();
+    await prisma.employee.update({ where: { id }, data: employeeData(input) });
+    revalidatePath("/");
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function deleteEmployeeAction(id: string): Promise<ActionResult<void>> {
+  try {
+    await requireManager();
+    await prisma.employee.delete({ where: { id } });
+    revalidatePath("/");
+    return { success: true, data: undefined };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export interface BulkAttendanceEntry {
+  employeeId: string;
+  status: "PRESENT" | "HALF_DAY" | "ABSENT";
+  busId?: string;
+  advanceTaken?: number;
+}
+
+/**
+ * Marks or updates attendance for multiple employees on a given date.
+ * Automatically calculates daily wage from employee's salary settings:
+ * - DAILY: 1x baseSalary (PRESENT), 0.5x (HALF_DAY), 0 (ABSENT)
+ * - MONTHLY: round(baseSalary / 30) (PRESENT), round(baseSalary / 60) (HALF_DAY), 0 (ABSENT)
+ */
+export async function markBulkAttendanceAction(
+  dateStr: string,
+  entries: BulkAttendanceEntry[]
+): Promise<ActionResult<{ created: number; updated: number }>> {
+  try {
+    await requireUser();
+    const target = toDayDate(dateStr);
+    const empIds = entries.map((e) => e.employeeId).filter(Boolean);
+    if (!empIds.length) return { success: true, data: { created: 0, updated: 0 } };
+
+    const employees = await prisma.employee.findMany({
+      where: { id: { in: empIds } },
+    });
+    const empMap = new Map(employees.map((e) => [e.id, e]));
+
+    const existing = await prisma.crewAttendancePayroll.findMany({
+      where: { date: target },
+    });
+    const byEmpId = new Map<string, (typeof existing)[number]>();
+    const byName = new Map<string, (typeof existing)[number]>();
+    for (const r of existing) {
+      if (r.employeeId) byEmpId.set(r.employeeId, r);
+      byName.set(r.employeeName, r);
+    }
+
+    let created = 0;
+    let updated = 0;
+
+    for (const entry of entries) {
+      const emp = empMap.get(entry.employeeId);
+      if (!emp) continue;
+
+      const fullDaily =
+        emp.salaryType === "MONTHLY" ? Math.round(emp.baseSalary / 30) : emp.baseSalary;
+      const wage =
+        entry.status === "PRESENT"
+          ? fullDaily
+          : entry.status === "HALF_DAY"
+          ? Math.round(fullDaily / 2)
+          : 0;
+      const advance = Math.max(0, num(entry.advanceTaken));
+      const balanceOwed = Number((wage - advance).toFixed(2));
+      const busId = entry.busId !== undefined ? (entry.busId || null) : emp.busId;
+
+      const prev = byEmpId.get(emp.id) ?? byName.get(emp.name);
+      if (prev) {
+        await prisma.crewAttendancePayroll.update({
+          where: { id: prev.id },
+          data: {
+            employeeId: emp.id,
+            employeeName: emp.name,
+            role: emp.role,
+            dailyWage: wage,
+            advanceTaken: advance,
+            balanceOwed,
+            busId,
+            status: entry.status,
+          },
+        });
+        updated++;
+      } else {
+        await prisma.crewAttendancePayroll.create({
+          data: {
+            employeeId: emp.id,
+            employeeName: emp.name,
+            role: emp.role,
+            dailyWage: wage,
+            advanceTaken: advance,
+            balanceOwed,
+            busId,
+            date: target,
+            status: entry.status,
+          },
+        });
+        created++;
+      }
+    }
+
+    revalidatePath("/");
+    return { success: true, data: { created, updated } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export interface SalaryPaymentInput {
+  employeeId: string;
+  paymentDate: string;
+  periodMonth: string; // YYYY-MM
+  grossEarned: number;
+  bonus: number;
+  deductions: number;
+  netPaid: number;
+  paymentMethod: string;
+  notes?: string;
+}
+
+async function salaryPaymentData(input: SalaryPaymentInput) {
+  if (!input.employeeId) throw new Error("Select an employee.");
+  if (!/^\d{4}-\d{2}$/.test(input.periodMonth || "")) {
+    throw new Error("Period month must be in YYYY-MM format.");
+  }
+  const emp = await prisma.employee.findUnique({ where: { id: input.employeeId } });
+  if (!emp) throw new Error("Employee not found.");
+  const grossEarned = num(input.grossEarned);
+  const bonus = num(input.bonus);
+  const deductions = num(input.deductions);
+  const netPaid = num(input.netPaid);
+  if (grossEarned < 0 || bonus < 0 || deductions < 0 || netPaid < 0) {
+    throw new Error("Salary amounts cannot be negative.");
+  }
+  return {
+    employeeId: input.employeeId,
+    employeeName: emp.name,
+    paymentDate: toDayDate(input.paymentDate),
+    periodMonth: input.periodMonth,
+    grossEarned,
+    bonus,
+    deductions,
+    netPaid,
+    paymentMethod: (input.paymentMethod || "Cash").trim(),
+    notes: optStr(input.notes),
+  };
+}
+
+export async function addSalaryPaymentAction(
+  input: SalaryPaymentInput
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireUser();
+    const data = await salaryPaymentData(input);
+    const p = await prisma.salaryPayment.create({ data });
+    revalidatePath("/");
+    return { success: true, data: { id: p.id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function updateSalaryPaymentAction(
+  id: string,
+  input: SalaryPaymentInput
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requireUser();
+    const data = await salaryPaymentData(input);
+    await prisma.salaryPayment.update({ where: { id }, data });
+    revalidatePath("/");
+    return { success: true, data: { id } };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
+export async function deleteSalaryPaymentAction(id: string): Promise<ActionResult<void>> {
+  try {
+    await requireUser();
+    await prisma.salaryPayment.delete({ where: { id } });
+    revalidatePath("/");
+    return { success: true, data: undefined };
   } catch (error) {
     return fail(error);
   }

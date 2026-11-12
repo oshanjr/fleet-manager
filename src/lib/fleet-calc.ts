@@ -52,6 +52,7 @@ export interface MaintenanceItem {
 
 export interface CrewMember {
   id: string;
+  employeeId?: string | null;
   busId?: string | null;
   name: string;
   role: "DRIVER" | "CONDUCTOR";
@@ -61,6 +62,37 @@ export interface CrewMember {
   balance: number;
   date?: string;
   present: boolean;
+  status?: "PRESENT" | "HALF_DAY" | "ABSENT";
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  role: "DRIVER" | "CONDUCTOR";
+  phone: string;
+  nic: string;
+  licenseNumber: string;
+  salaryType: "DAILY" | "MONTHLY";
+  baseSalary: number;
+  busId: string | null;
+  assignedBus: string;
+  isActive: boolean;
+  joinedDate: string;
+  notes: string;
+}
+
+export interface SalaryPayment {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  paymentDate: string;
+  periodMonth: string;
+  grossEarned: number;
+  bonus: number;
+  deductions: number;
+  netPaid: number;
+  paymentMethod: string;
+  notes: string;
 }
 
 export interface Expense {

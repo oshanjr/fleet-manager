@@ -17,6 +17,17 @@ enum CrewRole {
   CONDUCTOR
 }
 
+enum SalaryType {
+  DAILY
+  MONTHLY
+}
+
+enum AttendanceStatus {
+  PRESENT
+  HALF_DAY
+  ABSENT
+}
+
 model User {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId
   name         String
@@ -50,6 +61,7 @@ model BusVehicle {
   maintenanceLogs       BusMaintenanceLog[]
   crewAttendancePayroll CrewAttendancePayroll[]
   fleetExpenses         FleetExpense[]
+  employees             Employee[]
 
   @@index([isActive])
 }
@@ -97,22 +109,72 @@ model BusMaintenanceLog {
   @@index([date])
 }
 
+model Employee {
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  role          CrewRole
+  phone         String?
+  nic           String?
+  licenseNumber String?
+  salaryType    SalaryType @default(DAILY)
+  baseSalary    Float
+  busId         String?    @db.ObjectId
+  isActive      Boolean    @default(true)
+  joinedDate    DateTime   @default(now())
+  notes         String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  bus            BusVehicle?             @relation(fields: [busId], references: [id], onDelete: SetNull)
+  attendances    CrewAttendancePayroll[]
+  salaryPayments SalaryPayment[]
+
+  @@index([isActive])
+  @@index([busId])
+}
+
 model CrewAttendancePayroll {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  id           String           @id @default(auto()) @map("_id") @db.ObjectId
   date         DateTime
+  employeeId   String?          @db.ObjectId
   employeeName String
   role         CrewRole
+  status       AttendanceStatus @default(PRESENT)
   dailyWage    Float
-  advanceTaken Float    @default(0)
-  balanceOwed  Float    @default(0)
-  busId        String?  @db.ObjectId
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  advanceTaken Float            @default(0)
+  balanceOwed  Float            @default(0)
+  busId        String?          @db.ObjectId
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
-  bus BusVehicle? @relation(fields: [busId], references: [id], onDelete: SetNull)
+  employee Employee?   @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  bus      BusVehicle? @relation(fields: [busId], references: [id], onDelete: SetNull)
 
   @@index([date])
   @@index([busId])
+  @@index([employeeId])
+}
+
+model SalaryPayment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  employeeId    String   @db.ObjectId
+  employeeName  String
+  paymentDate   DateTime
+  periodMonth   String
+  grossEarned   Float    @default(0)
+  bonus         Float    @default(0)
+  deductions    Float    @default(0)
+  netPaid       Float
+  paymentMethod String   @default("Cash")
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([paymentDate])
+  @@index([periodMonth])
 }
 
 model CrewRate {

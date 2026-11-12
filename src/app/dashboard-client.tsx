@@ -27,6 +27,8 @@ import {
   RouteLog,
   MaintenanceItem,
   CrewMember,
+  Employee,
+  SalaryPayment,
   Expense,
   Settings,
   DEFAULT_SETTINGS,
@@ -38,6 +40,7 @@ import {
   downloadCSV,
 } from "@/lib/fleet-calc";
 import { todayLK, addDays } from "@/lib/dates";
+import EmployeesTab from "./components/employees-tab";
 import ExpensesTab from "./components/expenses-tab";
 import ReportsTab from "./components/reports-tab";
 import SettingsModal from "./components/settings-modal";
@@ -74,6 +77,8 @@ export default function FleetDashboardClient({
   const [routeLogs, setRouteLogs] = useState<RouteLog[]>([]);
   const [maintenanceRecords, setMaintenanceRecords] = useState<MaintenanceItem[]>([]);
   const [crewRoster, setCrewRoster] = useState<CrewMember[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [salaryPayments, setSalaryPayments] = useState<SalaryPayment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [showSettings, setShowSettings] = useState(false);
@@ -106,6 +111,8 @@ export default function FleetDashboardClient({
         setRouteLogs(res.data.routeLogs as RouteLog[]);
         setMaintenanceRecords(res.data.maintenanceRecords as MaintenanceItem[]);
         setCrewRoster(res.data.crewRoster as CrewMember[]);
+        setEmployees((res.data.employees ?? []) as Employee[]);
+        setSalaryPayments((res.data.salaryPayments ?? []) as SalaryPayment[]);
         setExpenses(res.data.expenses as Expense[]);
         setSettings(res.data.settings);
         setLoadError("");
@@ -980,7 +987,7 @@ export default function FleetDashboardClient({
             { id: "logs", label: "Daily Route Fares", icon: "📋" },
             { id: "maintenance", label: "Maintenance & Budget", icon: "🔧" },
             { id: "expenses", label: "Operating Expenses", icon: "🧾" },
-            { id: "crew", label: "Crew & Attendance", icon: "👥" },
+            { id: "crew", label: "Employees & Payroll", icon: "👥" },
             { id: "buses", label: "Vehicles & Documents", icon: "🚍" },
             { id: "sync", label: "Central Hub Sync", icon: "🔄" },
           ].map((tab) => (
@@ -2486,230 +2493,18 @@ export default function FleetDashboardClient({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 5: CREW & ATTENDANCE (FULL EDIT & DELETE + DAILY ROSTER) */}
+        {/* TAB 5: EMPLOYEES, ATTENDANCE & PAYROLL */}
         {/* ============================================================== */}
         {activeTab === "crew" && (
-          <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-bold text-white">Crew Attendance & Payroll (LKR)</h2>
-                <p className="text-xs text-slate-400">
-                  Daily attendance, base wages (Driver: {formatCompactLKR(settings.driverBaseWage)}, Conductor: {formatCompactLKR(settings.conductorBaseWage)}), advances, and balance owed
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  type="date"
-                  value={crewFilterDate}
-                  onChange={(e) => setCrewFilterDate(e.target.value)}
-                  className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
-                  title="Filter by attendance date (clear for all)"
-                />
-                {crewFilterDate && (
-                  <button
-                    onClick={() => setCrewFilterDate("")}
-                    className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 py-1.5 text-xs text-slate-300 hover:bg-slate-700"
-                  >
-                    Show All Dates
-                  </button>
-                )}
-                <button
-                  onClick={handleCopyPreviousCrew}
-                  disabled={copyingCrew}
-                  className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
-                  title="Copy previous day's crew roster onto the selected date"
-                >
-                  {copyingCrew ? "Copying..." : `📋 Copy Roster to ${crewFilterDate || todayStr}`}
-                </button>
-                <button
-                  onClick={handleOpenAddCrew}
-                  className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
-                >
-                  + Mark Crew Attendance
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider border-b border-slate-800">
-                  <tr>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Crew Member</th>
-                    <th className="py-3 px-4">Role</th>
-                    <th className="py-3 px-4">Assigned Bus</th>
-                    <th className="py-3 px-4">Daily Wage (LKR)</th>
-                    <th className="py-3 px-4">Advance Paid (LKR)</th>
-                    <th className="py-3 px-4 text-amber-400 font-bold">Balance Owed (LKR)</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800 text-slate-200">
-                  {visibleCrew.length === 0 && (
-                    <tr>
-                      <td colSpan={8} className="py-6 text-center text-slate-500">
-                        No attendance records for {crewFilterDate || "this filter"}. Click &ldquo;📋 Copy Roster&rdquo; or &ldquo;+ Mark Crew Attendance&rdquo;.
-                      </td>
-                    </tr>
-                  )}
-                  {visibleCrew.map((c) => (
-                    <tr key={c.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3.5 px-4 font-mono text-slate-400">{c.date}</td>
-                      <td className="py-3.5 px-4 font-semibold text-white">{c.name}</td>
-                      <td className="py-3.5 px-4">
-                        <span className="rounded bg-slate-800 px-2 py-0.5 text-[10px] font-mono font-semibold">{c.role}</span>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-slate-300">{c.assignedBus}</td>
-                      <td className="py-3.5 px-4">{formatLKR(c.wage)}</td>
-                      <td className="py-3.5 px-4 text-rose-300">{formatLKR(c.advance)}</td>
-                      <td className="py-3.5 px-4 font-bold text-amber-400">{formatLKR(c.balance)}</td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleOpenEditCrew(c)}
-                            className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition-colors"
-                          >
-                            ✏️ Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteCrew(c)}
-                            className="rounded-lg bg-slate-800 px-2.5 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/20 transition-colors"
-                          >
-                            🗑️ Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Crew Modal (Add / Edit) */}
-            {showCrewModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-base font-bold text-white">
-                      {editingCrew ? "Edit Crew Attendance" : "Mark Crew Attendance"}
-                    </h3>
-                    <button onClick={() => setShowCrewModal(false)} className="text-slate-400 hover:text-white">✕</button>
-                  </div>
-                  <form onSubmit={handleSaveCrew} className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-xs font-semibold text-slate-300">Date</label>
-                        <input
-                          type="date"
-                          required
-                          value={crewDate}
-                          onChange={(e) => setCrewDate(e.target.value)}
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-slate-300">Operational Role</label>
-                        <select
-                          value={crewRole}
-                          onChange={(e) => {
-                            const r = e.target.value as "DRIVER" | "CONDUCTOR";
-                            setCrewRole(r);
-                            if (!editingCrew) {
-                              setCrewWage(String(r === "DRIVER" ? settings.driverBaseWage : settings.conductorBaseWage));
-                            }
-                          }}
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                        >
-                          <option value="DRIVER">Driver</option>
-                          <option value="CONDUCTOR">Conductor</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Employee Full Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={crewName}
-                        onChange={(e) => setCrewName(e.target.value)}
-                        placeholder="e.g. Ruwan Jayawardena"
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Assigned Bus (Optional)</label>
-                      <select
-                        value={crewBusId}
-                        onChange={(e) => setCrewBusId(e.target.value)}
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      >
-                        <option value="">-- No Assigned Bus --</option>
-                        {buses.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.regNumber} - {b.route}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-xs font-semibold text-slate-300">Daily Wage (LKR)</label>
-                        <input
-                          type="number"
-                          step="50"
-                          min="0"
-                          required
-                          value={crewWage}
-                          onChange={(e) => setCrewWage(e.target.value)}
-                          placeholder="3500"
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-slate-300">Advance Paid (LKR)</label>
-                        <input
-                          type="number"
-                          step="50"
-                          min="0"
-                          value={crewAdvance}
-                          onChange={(e) => setCrewAdvance(e.target.value)}
-                          placeholder="0"
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs">
-                      <span className="text-slate-400">Balance Owed for Day:</span>
-                      <span className="font-mono font-bold text-amber-400">
-                        {formatLKR((Number(crewWage) || 0) - (Number(crewAdvance) || 0))}
-                      </span>
-                    </div>
-
-                    <div className="flex justify-end gap-2 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setShowCrewModal(false)}
-                        className="rounded-lg bg-slate-800 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={submittingCrew}
-                        className="rounded-lg bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-50"
-                      >
-                        {submittingCrew ? "Saving..." : editingCrew ? "Save Changes" : "Save Attendance"}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            )}
-          </div>
+          <EmployeesTab
+            employees={employees}
+            crewRoster={crewRoster}
+            salaryPayments={salaryPayments}
+            buses={buses}
+            settings={settings}
+            todayStr={todayStr}
+            onChanged={loadData}
+          />
         )}
 
         {/* ============================================================== */}

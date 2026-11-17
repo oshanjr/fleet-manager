@@ -136,7 +136,8 @@ export default function ExpensesTab({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className={open ? "grid grid-cols-1 xl:grid-cols-[1fr_390px] gap-6 items-start" : ""}>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
           <h3 className="text-sm font-bold text-white">By Category</h3>
           {byCat.length === 0 && <p className="text-xs text-slate-500">No expenses for this filter.</p>}
@@ -212,14 +213,13 @@ export default function ExpensesTab({
             </table>
           </div>
         </div>
-      </div>
+        </div>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
-            <div className="flex justify-between items-center">
+        {open && (
+          <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white">{editing ? "Edit Expense" : "Add Operating Expense"}</h3>
-              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+              <button onClick={() => setOpen(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
             </div>
             {error && <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{error}</div>}
             <form onSubmit={save} className="space-y-3">
@@ -268,8 +268,8 @@ export default function ExpensesTab({
               </div>
             </form>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

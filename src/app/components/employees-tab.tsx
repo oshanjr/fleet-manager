@@ -265,7 +265,14 @@ export default function EmployeesTab({
   };
 
   // Employee CRUD handlers
+  const closeAllPanels = () => {
+    setEmpModalOpen(false);
+    setAttModalOpen(false);
+    setPayModalOpen(false);
+  };
+
   const openAddEmployee = () => {
+    closeAllPanels();
     setEditingEmp(null);
     setError("");
     setEmpForm({
@@ -285,6 +292,7 @@ export default function EmployeesTab({
   };
 
   const openEditEmployee = (emp: Employee) => {
+    closeAllPanels();
     setEditingEmp(emp);
     setError("");
     setEmpForm({
@@ -400,6 +408,7 @@ export default function EmployeesTab({
 
   // Single attendance modal
   const openEditAttendance = (c: CrewMember) => {
+    closeAllPanels();
     setEditingAtt(c);
     setError("");
     setAttForm({
@@ -416,6 +425,7 @@ export default function EmployeesTab({
   };
 
   const openAddAttendance = () => {
+    closeAllPanels();
     setEditingAtt(null);
     setError("");
     const first = employees.find((e) => e.isActive);
@@ -496,6 +506,7 @@ export default function EmployeesTab({
   };
 
   const openPaySalaryModal = (emp?: Employee) => {
+    closeAllPanels();
     setEditingPay(null);
     setError("");
     const targetEmp = emp || employees.find((e) => e.isActive) || employees[0];
@@ -530,6 +541,7 @@ export default function EmployeesTab({
   };
 
   const openEditPaymentModal = (p: SalaryPayment) => {
+    closeAllPanels();
     setEditingPay(p);
     setError("");
     setPayForm({
@@ -693,6 +705,9 @@ export default function EmployeesTab({
         ))}
       </div>
 
+      {/* Main Content + Side Panel Layout */}
+      <div className={empModalOpen || attModalOpen || payModalOpen ? "grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start" : ""}>
+        <div className="min-w-0">
       {/* SUB-TAB 1: EMPLOYEES & SALARY SETUP */}
       {subTab === "roster" && (
         <div className="space-y-4">
@@ -1260,17 +1275,29 @@ export default function EmployeesTab({
           </div>
         </div>
       )}
+        </div>
 
-      {/* MODAL: ADD / EDIT EMPLOYEE */}
+      {/* SIDE PANEL: ADD / EDIT EMPLOYEE */}
       {empModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-white">
-              {editingEmp ? `Edit Employee — ${editingEmp.name}` : "Add New Employee"}
-            </h3>
-            <p className="mt-1 text-xs text-slate-400">
-              Set role, salary rate (daily or monthly), and default bus assignment.
-            </p>
+        <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+          <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-base font-bold text-white">
+                {editingEmp ? `Edit Employee — ${editingEmp.name}` : "Add New Employee"}
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Set role, salary rate (daily or monthly), and default bus assignment.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setEmpModalOpen(false)}
+              className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div>
             {error && (
               <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-300">
                 {error}
@@ -1446,13 +1473,22 @@ export default function EmployeesTab({
         </div>
       )}
 
-      {/* MODAL: ADD / EDIT SINGLE ATTENDANCE */}
+      {/* SIDE PANEL: ADD / EDIT SINGLE ATTENDANCE */}
       {attModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
-            <h3 className="text-lg font-bold text-white">
+        <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+            <h3 className="text-base font-bold text-white">
               {editingAtt ? "Edit Attendance Record" : "Add Attendance Entry"}
             </h3>
+            <button
+              type="button"
+              onClick={() => setAttModalOpen(false)}
+              className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div>
             {error && (
               <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-300">
                 {error}
@@ -1603,16 +1639,27 @@ export default function EmployeesTab({
         </div>
       )}
 
-      {/* MODAL: PAY SALARY */}
+      {/* SIDE PANEL: PAY SALARY */}
       {payModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-lg rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-bold text-white">
-              {editingPay ? "Edit Salary Payment" : "Pay Employee Salary"}
-            </h3>
-            <p className="mt-1 text-xs text-slate-400">
-              Auto-calculates attendance wages earned minus advances & prior payments for the period.
-            </p>
+        <div className="order-first xl:order-last rounded-2xl border border-emerald-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+          <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
+            <div>
+              <h3 className="text-base font-bold text-white">
+                {editingPay ? "Edit Salary Payment" : "Pay Employee Salary"}
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Auto-calculates attendance wages earned minus advances & prior payments for the period.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPayModalOpen(false)}
+              className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              ✕ Close
+            </button>
+          </div>
+          <div>
             {error && (
               <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 p-2.5 text-xs text-rose-300">
                 {error}
@@ -1797,6 +1844,7 @@ export default function EmployeesTab({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -43,7 +43,7 @@ import { todayLK, addDays } from "@/lib/dates";
 import EmployeesTab from "./components/employees-tab";
 import ExpensesTab from "./components/expenses-tab";
 import ReportsTab from "./components/reports-tab";
-import SettingsModal from "./components/settings-modal";
+import SettingsTab from "./components/settings-tab";
 
 function DocBadge({ date, today }: { date?: string; today: string }) {
   const d = daysUntil(date, today);
@@ -70,7 +70,7 @@ export default function FleetDashboardClient({
   const [currentUser] = useState<SessionUser>(initialUser);
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync"
+    "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync" | "settings"
   >("overview");
 
   const [buses, setBuses] = useState<Bus[]>([]);
@@ -81,7 +81,6 @@ export default function FleetDashboardClient({
   const [salaryPayments, setSalaryPayments] = useState<SalaryPayment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [showSettings, setShowSettings] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -940,6 +939,7 @@ export default function FleetDashboardClient({
         { id: "crew", label: "Employees & Payroll", icon: "👥" },
         { id: "buses", label: "Vehicles & Documents", icon: "🚍" },
         { id: "sync", label: "Central Hub Sync", icon: "🔄" },
+        { id: "settings", label: "Settings & Budgets", icon: "⚙️" },
       ],
     },
   ] as const;
@@ -1015,7 +1015,7 @@ export default function FleetDashboardClient({
           {/* User profile, Settings & Logout */}
           <div className="flex items-center gap-2 sm:gap-3">
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => setActiveTab("settings")}
               className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition-colors"
               title="Commission Rates, Base Wages & Monthly Budgets"
             >
@@ -1073,7 +1073,7 @@ export default function FleetDashboardClient({
           {renderNavItems()}
           <div className="border-t border-slate-800 p-3">
             <button
-              onClick={() => setShowSettings(true)}
+              onClick={() => setActiveTab("settings")}
               className="w-full flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
             >
               <span>⚙️</span>
@@ -1125,7 +1125,8 @@ export default function FleetDashboardClient({
         {/* TAB: VEHICLE MAINTENANCE & WORKSHOP SERVICING & BUDGETING */}
         {/* ============================================================== */}
         {activeTab === "maintenance" && (
-          <div className="space-y-6">
+          <div className={showMaintModal ? "grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6 items-start" : ""}>
+          <div className="min-w-0 space-y-6">
             {/* Header & Quick Action Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 backdrop-blur-md">
               <div>
@@ -1156,7 +1157,7 @@ export default function FleetDashboardClient({
                   ⬇ CSV
                 </button>
                 <button
-                  onClick={() => setShowSettings(true)}
+                  onClick={() => setActiveTab("settings")}
                   className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
                 >
                   ⚙️ Set Budget
@@ -1321,16 +1322,16 @@ export default function FleetDashboardClient({
                 </table>
               </div>
             </div>
+          </div>
 
-            {/* Add / Edit Maintenance Modal */}
+            {/* Add / Edit Maintenance Side Panel */}
             {showMaintModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4">
-                  <div className="flex justify-between items-center">
+              <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
                       {editingMaint ? "Edit Maintenance Service Log" : "Record Maintenance Work Order"}
                     </h3>
-                    <button onClick={() => setShowMaintModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                    <button onClick={() => setShowMaintModal(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
                   </div>
 
                   <form onSubmit={handleSaveMaint} className="space-y-3">
@@ -1458,7 +1459,6 @@ export default function FleetDashboardClient({
                       </button>
                     </div>
                   </form>
-                </div>
               </div>
             )}
           </div>
@@ -2064,7 +2064,8 @@ export default function FleetDashboardClient({
         {/* TAB 2: BUSES & STATUTORY DOCUMENTS (FULL EDIT & DELETE) */}
         {/* ============================================================== */}
         {activeTab === "buses" && (
-          <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+          <div className={showAddBusModal ? "grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start" : ""}>
+          <div className="min-w-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Fleet Inventory, Routing & Statutory Documents</h2>
@@ -2141,16 +2142,16 @@ export default function FleetDashboardClient({
                 </tbody>
               </table>
             </div>
+          </div>
 
-            {/* Bus Modal (Add / Edit) */}
+            {/* Bus Side Panel (Add / Edit) */}
             {showAddBusModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-                  <div className="flex justify-between items-center">
+              <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
                       {editingBus ? "Edit Fleet Vehicle & Documents" : "Register New Fleet Vehicle"}
                     </h3>
-                    <button onClick={() => setShowAddBusModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                    <button onClick={() => setShowAddBusModal(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
                   </div>
                   <form onSubmit={handleSaveBus} className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
@@ -2273,7 +2274,6 @@ export default function FleetDashboardClient({
                       </button>
                     </div>
                   </form>
-                </div>
               </div>
             )}
           </div>
@@ -2283,7 +2283,8 @@ export default function FleetDashboardClient({
         {/* TAB 3: DAILY ROUTE LOGS (FULL EDIT & DELETE + KM & LITRES) */}
         {/* ============================================================== */}
         {activeTab === "logs" && (
-          <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
+          <div className={showAddLogModal ? "grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start" : ""}>
+          <div className="min-w-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-lg font-bold text-white">Daily Route Collections & Expenses (LKR)</h2>
@@ -2387,16 +2388,16 @@ export default function FleetDashboardClient({
                 </tbody>
               </table>
             </div>
+          </div>
 
-            {/* Route Log Modal (Add / Edit) */}
+            {/* Route Log Side Panel (Add / Edit) */}
             {showAddLogModal && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-                <div className="w-full max-w-lg rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-                  <div className="flex justify-between items-center">
+              <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
                       {editingLog ? "Edit Daily Bus Turnout" : "Record Daily Bus Turnout (LKR)"}
                     </h3>
-                    <button onClick={() => setShowAddLogModal(false)} className="text-slate-400 hover:text-white">✕</button>
+                    <button onClick={() => setShowAddLogModal(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
                   </div>
                   <form onSubmit={handleSaveLog} className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
@@ -2574,7 +2575,6 @@ export default function FleetDashboardClient({
                       </button>
                     </div>
                   </form>
-                </div>
               </div>
             )}
           </div>
@@ -2694,18 +2694,16 @@ export default function FleetDashboardClient({
             </div>
           </div>
         )}
+        {activeTab === "settings" && (
+          <SettingsTab
+            settings={settings}
+            canEdit={isManager}
+            onSaved={loadData}
+          />
+        )}
           </div>
         </main>
       </div>
-
-      {showSettings && (
-        <SettingsModal
-          settings={settings}
-          canEdit={isManager}
-          onClose={() => setShowSettings(false)}
-          onSaved={loadData}
-        />
-      )}
     </div>
   );
 }

@@ -101,9 +101,9 @@ export default function ExpensesTab({
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5">
         <div>
-          <h2 className="text-lg font-bold text-white">Operating Expenses</h2>
+          <h2 className="text-lg font-bold text-white">Other Expenses</h2>
           <p className="text-xs text-slate-400">
-            Insurance, revenue licence, permits, lease installments, tyres, depot rent and other costs not in daily fare logs
+            Insurance, yearly licence, permits, lease payments, tyres, rent and other costs not in daily cash entries
           </p>
         </div>
         <div className="flex gap-2">

@@ -918,28 +918,28 @@ export default function FleetDashboardClient({
 
   const navSections = [
     {
-      title: "Analytics & Reports",
+      title: "Summary & Reports",
       items: [
-        { id: "overview", label: "Fleet Overview", icon: "📊" },
-        { id: "analytics", label: "Daily & Monthly Analytics", icon: "📈" },
-        { id: "reports", label: "Financial Reports", icon: "📑" },
+        { id: "overview", label: "Home Summary", icon: "📊" },
+        { id: "analytics", label: "Daily & Monthly Profit", icon: "📈" },
+        { id: "reports", label: "Reports", icon: "📑" },
       ],
     },
     {
-      title: "Operations",
+      title: "Daily Work",
       items: [
-        { id: "logs", label: "Daily Route Fares", icon: "📋" },
-        { id: "maintenance", label: "Maintenance & Budget", icon: "🔧" },
-        { id: "expenses", label: "Operating Expenses", icon: "🧾" },
+        { id: "logs", label: "Daily Cash & Trips", icon: "📋" },
+        { id: "maintenance", label: "Repairs & Service", icon: "🔧" },
+        { id: "expenses", label: "Other Expenses", icon: "🧾" },
       ],
     },
     {
-      title: "People & Fleet",
+      title: "Staff & Buses",
       items: [
-        { id: "crew", label: "Employees & Payroll", icon: "👥" },
-        { id: "buses", label: "Vehicles & Documents", icon: "🚍" },
-        { id: "sync", label: "Central Hub Sync", icon: "🔄" },
-        { id: "settings", label: "Settings & Budgets", icon: "⚙️" },
+        { id: "crew", label: "Staff & Salaries", icon: "👥" },
+        { id: "buses", label: "Buses & Papers", icon: "🚍" },
+        { id: "sync", label: "Save Day Total", icon: "🔄" },
+        { id: "settings", label: "Settings", icon: "⚙️" },
       ],
     },
   ] as const;
@@ -999,16 +999,16 @@ export default function FleetDashboardClient({
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">FleetFlow Manager</h1>
+                <h1 className="text-base sm:text-lg font-bold tracking-tight text-white">Bus Manager</h1>
                 <span className="hidden sm:inline-block rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/20">
-                  LKR Currency (Rs.)
+                  Rs. (LKR)
                 </span>
                 <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  Live Dispatch
+                  Online
                 </span>
               </div>
-              <p className="hidden sm:block text-[11px] text-slate-400">Bus Operations, Workshop Servicing, Budget & Financials (LKR)</p>
+              <p className="hidden sm:block text-[11px] text-slate-400">Daily Bus Cash, Repairs, Staff &amp; Profit (Rs.)</p>
             </div>
           </div>
 
@@ -1077,7 +1077,7 @@ export default function FleetDashboardClient({
               className="w-full flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
             >
               <span>⚙️</span>
-              <span>Rates &amp; Budgets</span>
+              <span>Settings</span>
             </button>
           </div>
         </aside>
@@ -1130,9 +1130,9 @@ export default function FleetDashboardClient({
             {/* Header & Quick Action Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 backdrop-blur-md">
               <div>
-                <h2 className="text-lg font-bold text-white">Vehicle Maintenance, Servicing & Budget Control</h2>
+                <h2 className="text-lg font-bold text-white">Repairs &amp; Service</h2>
                 <p className="text-xs text-slate-400">
-                  Track workshop work orders, odometer readings, next service dates, vendor billing, and monthly budget in LKR
+                  Add bus repairs, service costs, meter readings, and track your monthly repair budget
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -1166,7 +1166,7 @@ export default function FleetDashboardClient({
                   onClick={handleOpenAddMaint}
                   className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
                 >
-                  + Record Maintenance Service
+                  + Add Repair / Service
                 </button>
               </div>
             </div>
@@ -1329,7 +1329,7 @@ export default function FleetDashboardClient({
               <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
-                      {editingMaint ? "Edit Maintenance Service Log" : "Record Maintenance Work Order"}
+                      {editingMaint ? "Edit Repair / Service" : "Add Repair / Service"}
                     </h3>
                     <button onClick={() => setShowMaintModal(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
                   </div>
@@ -1364,7 +1364,7 @@ export default function FleetDashboardClient({
                     </div>
 
                     <div>
-                      <label className="text-xs font-semibold text-slate-300">Service Type / Work Performed</label>
+                      <label className="text-xs font-semibold text-slate-300">What Was Done</label>
                       <input
                         type="text"
                         required
@@ -1383,7 +1383,7 @@ export default function FleetDashboardClient({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Workshop / Vendor</label>
+                        <label className="text-xs font-semibold text-slate-300">Garage / Shop</label>
                         <input
                           type="text"
                           required
@@ -1409,7 +1409,7 @@ export default function FleetDashboardClient({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Odometer (km, optional)</label>
+                        <label className="text-xs font-semibold text-slate-300">Meter (km, optional)</label>
                         <input
                           type="number"
                           step="1"
@@ -1432,7 +1432,7 @@ export default function FleetDashboardClient({
                     </div>
 
                     <div>
-                      <label className="text-xs font-semibold text-slate-300">Notes / Parts Replaced (optional)</label>
+                      <label className="text-xs font-semibold text-slate-300">Notes / Parts (optional)</label>
                       <input
                         type="text"
                         value={maintNotes}
@@ -2068,16 +2068,16 @@ export default function FleetDashboardClient({
           <div className="min-w-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold text-white">Fleet Inventory, Routing & Statutory Documents</h2>
+                <h2 className="text-lg font-bold text-white">Buses &amp; Papers</h2>
                 <p className="text-xs text-slate-400">
-                  Manage registrations, routes, seating capacity, and expiry dates for Insurance, Revenue Licence, Route Permit, Emission & Fitness
+                  Add your buses, routes, seats, and paper expiry dates (Insurance, Licence, Permit, Smoke Test, Fitness)
                 </p>
               </div>
               <button
                 onClick={handleOpenAddBus}
                 className="flex items-center gap-2 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
               >
-                + Register New Bus
+                + Add Bus
               </button>
             </div>
 
@@ -2149,14 +2149,14 @@ export default function FleetDashboardClient({
               <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
-                      {editingBus ? "Edit Fleet Vehicle & Documents" : "Register New Fleet Vehicle"}
+                      {editingBus ? "Edit Bus & Papers" : "Add New Bus"}
                     </h3>
                     <button onClick={() => setShowAddBusModal(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
                   </div>
                   <form onSubmit={handleSaveBus} className="space-y-3">
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Registration Number</label>
+                        <label className="text-xs font-semibold text-slate-300">Bus Number</label>
                         <input
                           type="text"
                           required
@@ -2167,7 +2167,7 @@ export default function FleetDashboardClient({
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Seating Capacity</label>
+                        <label className="text-xs font-semibold text-slate-300">Seats</label>
                         <input
                           type="number"
                           min="10"
@@ -2192,7 +2192,7 @@ export default function FleetDashboardClient({
 
                     <div className="pt-2 border-t border-slate-800">
                       <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">
-                        Statutory Document Expiry Dates (optional — alerts 30 days before expiry)
+                        Paper Expiry Dates (warns 30 days before)
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
@@ -2205,7 +2205,7 @@ export default function FleetDashboardClient({
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-slate-300">Revenue Licence Expiry</label>
+                          <label className="text-xs font-semibold text-slate-300">Yearly Licence Expiry</label>
                           <input
                             type="date"
                             value={busDocs.revenueLicenseExpiry}
@@ -2223,7 +2223,7 @@ export default function FleetDashboardClient({
                           />
                         </div>
                         <div>
-                          <label className="text-xs font-semibold text-slate-300">Emission Test Expiry</label>
+                          <label className="text-xs font-semibold text-slate-300">Smoke Test Expiry</label>
                           <input
                             type="date"
                             value={busDocs.emissionTestExpiry}
@@ -2232,7 +2232,7 @@ export default function FleetDashboardClient({
                           />
                         </div>
                         <div className="col-span-2">
-                          <label className="text-xs font-semibold text-slate-300">Fitness Certificate Expiry</label>
+                          <label className="text-xs font-semibold text-slate-300">Fitness Paper Expiry</label>
                           <input
                             type="date"
                             value={busDocs.fitnessCertExpiry}
@@ -2287,9 +2287,9 @@ export default function FleetDashboardClient({
           <div className="min-w-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <h2 className="text-lg font-bold text-white">Daily Route Collections & Expenses (LKR)</h2>
+                <h2 className="text-lg font-bold text-white">Daily Bus Cash &amp; Trips (Rs.)</h2>
                 <p className="text-xs text-slate-400">
-                  Logged fare turnouts, km run, diesel litres & cost, highway tolls, trip expenses, and crew commission ({settings.driverCommissionPct}% driver + {settings.conductorCommissionPct}% conductor)
+                  Record morning &amp; evening cash, fuel, road fees, and staff commission ({settings.driverCommissionPct}% driver + {settings.conductorCommissionPct}% conductor)
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -2395,7 +2395,7 @@ export default function FleetDashboardClient({
               <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
-                      {editingLog ? "Edit Daily Bus Turnout" : "Record Daily Bus Turnout (LKR)"}
+                      {editingLog ? "Edit Day Cash Entry" : "Add Day Cash Entry (Rs.)"}
                     </h3>
                     <button onClick={() => setShowAddLogModal(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>
                   </div>
@@ -2417,7 +2417,7 @@ export default function FleetDashboardClient({
                         </select>
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Date of Turnout</label>
+                        <label className="text-xs font-semibold text-slate-300">Date</label>
                         <input
                           type="date"
                           required
@@ -2430,7 +2430,7 @@ export default function FleetDashboardClient({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Morning Collection (LKR)</label>
+                        <label className="text-xs font-semibold text-slate-300">Morning Cash (Rs.)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -2443,7 +2443,7 @@ export default function FleetDashboardClient({
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Evening Collection (LKR)</label>
+                        <label className="text-xs font-semibold text-slate-300">Evening Cash (Rs.)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -2459,7 +2459,7 @@ export default function FleetDashboardClient({
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Fuel Cost (LKR)</label>
+                        <label className="text-xs font-semibold text-slate-300">Fuel Cost (Rs.)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -2471,7 +2471,7 @@ export default function FleetDashboardClient({
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Tolls & Line Fees (LKR)</label>
+                        <label className="text-xs font-semibold text-slate-300">Road &amp; Stand Fees (Rs.)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -2486,7 +2486,7 @@ export default function FleetDashboardClient({
 
                     <div className="grid grid-cols-3 gap-2">
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Distance Run (km)</label>
+                        <label className="text-xs font-semibold text-slate-300">Distance (km)</label>
                         <input
                           type="number"
                           step="0.1"
@@ -2498,7 +2498,7 @@ export default function FleetDashboardClient({
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Diesel Litres (L)</label>
+                        <label className="text-xs font-semibold text-slate-300">Fuel (Litres)</label>
                         <input
                           type="number"
                           step="0.1"
@@ -2510,7 +2510,7 @@ export default function FleetDashboardClient({
                         />
                       </div>
                       <div>
-                        <label className="text-xs font-semibold text-slate-300">Other Trip Cost (LKR)</label>
+                        <label className="text-xs font-semibold text-slate-300">Other Spend (Rs.)</label>
                         <input
                           type="number"
                           step="0.01"
@@ -2537,15 +2537,15 @@ export default function FleetDashboardClient({
                     {/* Live Calculation Preview */}
                     <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs space-y-1">
                       <div className="flex justify-between text-slate-400">
-                        <span>Gross Collection:</span>
+                        <span>Total Cash In:</span>
                         <span className="font-mono font-semibold text-emerald-400">{formatLKR(logPreview.gross)}</span>
                       </div>
                       <div className="flex justify-between text-slate-400">
-                        <span>Driver ({settings.driverCommissionPct}%) + Conductor ({settings.conductorCommissionPct}%) Commission:</span>
+                        <span>Driver ({settings.driverCommissionPct}%) + Conductor ({settings.conductorCommissionPct}%) Pay:</span>
                         <span className="font-mono text-rose-300">-{formatLKR(logPreview.comm)}</span>
                       </div>
                       <div className="flex justify-between font-bold text-white border-t border-slate-800 pt-1">
-                        <span>Net Bus Profit:</span>
+                        <span>Net Profit:</span>
                         <span className={`font-mono ${logPreview.net >= 0 ? "text-amber-400" : "text-rose-400"}`}>
                           {formatLKR(logPreview.net)}
                         </span>
@@ -2602,9 +2602,9 @@ export default function FleetDashboardClient({
           <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-white">Day Close & Central Admin Hub Synchronizer</h2>
+                <h2 className="text-lg font-bold text-white">Save Day Total</h2>
                 <p className="text-xs text-slate-400">
-                  Calculates and persists `DailyFleetSummary` in MongoDB for the selected operating day
+                  Check and save the day&apos;s total cash, expenses, and profit
                 </p>
               </div>
               <input
@@ -2621,31 +2621,31 @@ export default function FleetDashboardClient({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 space-y-4">
                 <h3 className="text-sm font-bold text-slate-200 uppercase tracking-wider">
-                  Day Closing Summary ({syncDate} — LKR)
+                  Day Summary ({syncDate} — Rs.)
                 </h3>
                 <div className="space-y-2 text-xs divide-y divide-slate-800">
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Total Route Collections:</span>
+                    <span>Total Cash In:</span>
                     <span className="font-mono font-semibold text-emerald-400">{formatLKR(syncDayReport.revenue)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Fuel Expenses:</span>
+                    <span>Fuel:</span>
                     <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.fuel)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Tolls & Other Trip Costs:</span>
+                    <span>Road Fees &amp; Other Spend:</span>
                     <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.tolls + syncDayReport.tripOther)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Crew Commissions & Wages:</span>
+                    <span>Staff Pay &amp; Commission:</span>
                     <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.commission + syncDayReport.crewWages)}</span>
                   </div>
                   <div className="flex justify-between py-1.5 text-slate-300">
-                    <span>Maintenance & Operating Expenses:</span>
+                    <span>Repairs &amp; Other Expenses:</span>
                     <span className="font-mono text-rose-400">-{formatLKR(syncDayReport.maintenance + syncDayReport.generalExpenses)}</span>
                   </div>
                   <div className="flex justify-between py-2 text-sm font-bold text-white pt-3 border-t-2 border-slate-700">
-                    <span>Net Closing Balance:</span>
+                    <span>Net Profit:</span>
                     <span className={`font-mono ${syncDayReport.net >= 0 ? "text-amber-400" : "text-rose-400"}`}>
                       {formatLKR(syncDayReport.net)}
                     </span>
@@ -2658,10 +2658,10 @@ export default function FleetDashboardClient({
                   className="w-full flex items-center justify-center gap-2 rounded-xl bg-amber-500 py-3 text-sm font-bold text-slate-950 hover:bg-amber-400 transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50"
                 >
                   {syncStatus === "syncing"
-                    ? "Persisting to MongoDB & Pushing to Hub..."
+                    ? "Saving Day Total..."
                     : syncStatus === "synced"
-                    ? `Successfully Closed & Synced (${syncDate}) ✓`
-                    : `Execute Day Close & Hub Sync (${syncDate})`}
+                    ? `Day Total Saved (${syncDate}) ✓`
+                    : `Save Day Total (${syncDate})`}
                 </button>
               </div>
 

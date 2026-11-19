@@ -74,8 +74,8 @@ export default function ReportsTab(props: {
       <div className="no-print rounded-2xl border border-slate-800 bg-slate-900/80 p-5 space-y-4">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-white">Financial Reports</h2>
-            <p className="text-xs text-slate-400">Profit & loss, vehicle performance, crew payroll and daily breakdown — printable and exportable</p>
+            <h2 className="text-lg font-bold text-white">Reports</h2>
+            <p className="text-xs text-slate-400">Simple profit &amp; loss, per-bus summary, staff pay, and daily totals — ready to print or download</p>
           </div>
           <div className="flex gap-2">
             <button onClick={() => exportReport(kind, r, p, fileTag)} className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700">
@@ -113,9 +113,9 @@ export default function ReportsTab(props: {
           {(
             [
               ["pnl", "📑 Profit & Loss"],
-              ["bus", "🚍 Vehicle Performance"],
-              ["crew", "👥 Crew Payroll"],
-              ["daily", "📅 Daily Breakdown"],
+              ["bus", "🚍 Per-Bus Summary"],
+              ["crew", "👥 Staff Pay"],
+              ["daily", "📅 Day-by-Day"],
             ] as [ReportKind, string][]
           ).map(([k, label]) => (
             <button

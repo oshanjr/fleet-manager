@@ -46,9 +46,9 @@ export default function SettingsTab({
   return (
     <div className="max-w-2xl rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-5">
       <div>
-        <h2 className="text-lg font-bold text-white">⚙️ Fleet Settings &amp; Budgets</h2>
+        <h2 className="text-lg font-bold text-white">⚙️ Settings</h2>
         <p className="text-xs text-slate-400">
-          Configure crew commission percentages, default daily wages, monthly maintenance budget, and revenue targets (LKR).
+          Set driver &amp; conductor commission %, default daily pay, and monthly budget targets (Rs.).
         </p>
       </div>
 
@@ -72,7 +72,7 @@ export default function SettingsTab({
         <fieldset disabled={!canEdit} className="space-y-5">
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Crew Commission (% of daily gross fare)
+              Staff Commission (% of daily cash)
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-slate-300">
@@ -107,11 +107,11 @@ export default function SettingsTab({
 
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Default Daily Wage (LKR)
+              Default Daily Pay (Rs.)
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-slate-300">
-                Driver Base Wage
+                Driver Daily Pay
                 <input
                   type="number"
                   step="50"
@@ -122,7 +122,7 @@ export default function SettingsTab({
                 />
               </label>
               <label className="text-xs font-semibold text-slate-300">
-                Conductor Base Wage
+                Conductor Daily Pay
                 <input
                   type="number"
                   step="50"
@@ -137,11 +137,11 @@ export default function SettingsTab({
 
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
-              Budgets &amp; Targets (LKR / month)
+              Monthly Budgets &amp; Targets (Rs.)
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <label className="text-xs font-semibold text-slate-300">
-                Monthly Maintenance Budget
+                Monthly Repair Budget
                 <input
                   type="number"
                   step="1000"
@@ -152,7 +152,7 @@ export default function SettingsTab({
                 />
               </label>
               <label className="text-xs font-semibold text-slate-300">
-                Monthly Revenue Target
+                Monthly Cash Target
                 <input
                   type="number"
                   step="1000"

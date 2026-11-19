@@ -617,14 +617,14 @@ export default function EmployeesTab({
       {/* Header + Sub-Navigation */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-white">Employee & Payroll Management</h2>
+          <h2 className="text-xl font-bold text-white">Staff &amp; Salaries</h2>
           <p className="text-xs text-slate-400">
-            Manage drivers & conductors, set daily/monthly salaries, assign buses, mark attendance, and pay salaries.
+            Add drivers &amp; conductors, set daily or monthly pay, assign buses, mark attendance, and pay salaries.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs">
-            <span className="text-slate-400">Period:</span>
+            <span className="text-slate-400">Month:</span>
             <input
               type="month"
               value={periodMonth}
@@ -636,7 +636,7 @@ export default function EmployeesTab({
             onClick={openAddEmployee}
             className="rounded-lg bg-amber-500 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-amber-400"
           >
-            + Add Employee
+            + Add Staff
           </button>
           <button
             onClick={() => openPaySalaryModal()}
@@ -656,29 +656,29 @@ export default function EmployeesTab({
       {/* KPI Strip */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400">Active Employees</div>
+          <div className="text-xs text-slate-400">Working Staff</div>
           <div className="mt-1 text-2xl font-bold text-white">{kpis.activeCount}</div>
-          <div className="mt-1 text-[11px] text-slate-500">{employees.length} total on roster</div>
+          <div className="mt-1 text-[11px] text-slate-500">{employees.length} total staff</div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400">Wages Earned ({periodMonth || "All"})</div>
+          <div className="text-xs text-slate-400">Total Earned ({periodMonth || "All"})</div>
           <div className="mt-1 text-2xl font-bold text-sky-400">{formatLKR(kpis.totalEarned)}</div>
-          <div className="mt-1 text-[11px] text-slate-500">From marked attendance</div>
+          <div className="mt-1 text-[11px] text-slate-500">From daily attendance</div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400">Daily Advances</div>
+          <div className="text-xs text-slate-400">Advances Taken</div>
           <div className="mt-1 text-2xl font-bold text-amber-400">{formatLKR(kpis.totalAdvances)}</div>
-          <div className="mt-1 text-[11px] text-slate-500">Deducted from payroll</div>
+          <div className="mt-1 text-[11px] text-slate-500">Cut from salary</div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400">Salaries Paid</div>
+          <div className="text-xs text-slate-400">Paid Out</div>
           <div className="mt-1 text-2xl font-bold text-emerald-400">{formatLKR(kpis.totalPaid)}</div>
-          <div className="mt-1 text-[11px] text-slate-500">Settled payouts</div>
+          <div className="mt-1 text-[11px] text-slate-500">Already paid</div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-          <div className="text-xs text-slate-400">Balance Owed</div>
+          <div className="text-xs text-slate-400">Balance to Pay</div>
           <div className="mt-1 text-2xl font-bold text-rose-400">{formatLKR(kpis.totalBalance)}</div>
-          <div className="mt-1 text-[11px] text-slate-500">Pending salary balance</div>
+          <div className="mt-1 text-[11px] text-slate-500">Still to pay</div>
         </div>
       </div>
 
@@ -686,9 +686,9 @@ export default function EmployeesTab({
       <div className="flex flex-wrap gap-2 border-b border-slate-800 pb-3">
         {(
           [
-            ["roster", `👥 Employees & Salary (${employees.length})`],
-            ["attendance", `✅ Daily Attendance (${dateAttendanceMap.size} marked on ${attendanceDate})`],
-            ["payments", `💵 Salary Payments (${filteredPayments.length})`],
+            ["roster", `👥 Staff & Pay (${employees.length})`],
+            ["attendance", `✅ Attendance (${dateAttendanceMap.size} on ${attendanceDate})`],
+            ["payments", `💵 Pay History (${filteredPayments.length})`],
           ] as const
         ).map(([key, label]) => (
           <button

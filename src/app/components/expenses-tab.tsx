@@ -136,7 +136,7 @@ export default function ExpensesTab({
         </div>
       </div>
 
-      <div className={open ? "grid grid-cols-1 xl:grid-cols-[1fr_390px] gap-6 items-start" : ""}>
+      <div className={open ? "grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start" : ""}>
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-3">
           <h3 className="text-sm font-bold text-white">By Category</h3>
@@ -216,7 +216,7 @@ export default function ExpensesTab({
         </div>
 
         {open && (
-          <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+          <div className="order-first lg:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-bold text-white">{editing ? "Edit Expense" : "Add Operating Expense"}</h3>
               <button onClick={() => setOpen(false)} className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white">✕ Close</button>

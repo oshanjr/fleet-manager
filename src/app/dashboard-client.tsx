@@ -960,7 +960,7 @@ export default function FleetDashboardClient({
                   setActiveTab(item.id);
                   onSelect?.();
                 }}
-                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-semibold transition-all ${
+                className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm md:text-xs font-semibold transition-all ${
                   active
                     ? "bg-amber-500/15 text-amber-400 border border-amber-500/30 shadow-sm"
                     : "border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-800/60"
@@ -985,7 +985,7 @@ export default function FleetDashboardClient({
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="lg:hidden rounded-lg border border-slate-700 bg-slate-800 p-2 text-slate-300 hover:bg-slate-700 hover:text-white"
+              className="md:hidden rounded-lg border border-slate-700 bg-slate-800 p-2.5 text-slate-300 hover:bg-slate-700 hover:text-white"
               aria-label="Open navigation menu"
             >
               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1039,7 +1039,7 @@ export default function FleetDashboardClient({
 
       {/* Mobile Slide-Over Sidebar */}
       {sidebarOpen && (
-        <div className="no-print fixed inset-0 z-50 flex lg:hidden">
+        <div className="no-print fixed inset-0 z-50 flex md:hidden">
           <div
             className="fixed inset-0 bg-black/70 backdrop-blur-sm"
             onClick={() => setSidebarOpen(false)}
@@ -1066,10 +1066,10 @@ export default function FleetDashboardClient({
         </div>
       )}
 
-      {/* Body: Desktop Sidebar + Main Content */}
+      {/* Body: Tablet/Desktop Sidebar + Main Content */}
       <div className="flex flex-1">
-        {/* Desktop Sidebar */}
-        <aside className="no-print hidden lg:flex lg:w-64 lg:flex-col lg:shrink-0 border-r border-slate-800 bg-slate-900/50 sticky top-[65px] h-[calc(100vh-65px)]">
+        {/* Tablet & Desktop Sidebar */}
+        <aside className="no-print hidden md:flex md:w-56 lg:w-64 md:flex-col md:shrink-0 border-r border-slate-800 bg-slate-900/50 sticky top-[61px] h-[calc(100vh-61px)]">
           {renderNavItems()}
           <div className="border-t border-slate-800 p-3">
             <button
@@ -1125,7 +1125,7 @@ export default function FleetDashboardClient({
         {/* TAB: VEHICLE MAINTENANCE & WORKSHOP SERVICING & BUDGETING */}
         {/* ============================================================== */}
         {activeTab === "maintenance" && (
-          <div className={showMaintModal ? "grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-6 items-start" : ""}>
+          <div className={showMaintModal ? "grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 items-start" : ""}>
           <div className="min-w-0 space-y-6">
             {/* Header & Quick Action Buttons */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-5 backdrop-blur-md">
@@ -1326,7 +1326,7 @@ export default function FleetDashboardClient({
 
             {/* Add / Edit Maintenance Side Panel */}
             {showMaintModal && (
-              <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+              <div className="order-first lg:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
                       {editingMaint ? "Edit Repair / Service" : "Add Repair / Service"}
@@ -1843,17 +1843,83 @@ export default function FleetDashboardClient({
         {/* ============================================================== */}
         {activeTab === "overview" && (
           <div className="space-y-6">
+            {/* Quick Actions First (Tablet-friendly big touch cards) */}
+            <div className="rounded-2xl border border-amber-500/30 bg-slate-900/80 p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-white">⚡ Quick Actions</h2>
+                <span className="text-[11px] text-slate-400">Tap to start</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <button
+                  onClick={() => {
+                    setActiveTab("logs");
+                    handleOpenAddLog();
+                  }}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl bg-amber-500 p-4 text-left text-slate-950 font-bold shadow-md shadow-amber-500/20 hover:bg-amber-400 active:scale-[0.98] transition-all min-h-[88px]"
+                >
+                  <span className="text-xl">📝</span>
+                  <span className="text-xs sm:text-sm leading-tight">+ Add Day Cash</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab("maintenance");
+                    handleOpenAddMaint();
+                  }}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                >
+                  <span className="text-xl">🔧</span>
+                  <span className="text-xs sm:text-sm leading-tight">+ Add Repair</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("expenses")}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                >
+                  <span className="text-xl">🧾</span>
+                  <span className="text-xs sm:text-sm leading-tight">Other Expenses</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("crew")}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                >
+                  <span className="text-xl">👥</span>
+                  <span className="text-xs sm:text-sm leading-tight">Staff &amp; Pay</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setActiveTab("buses");
+                    handleOpenAddBus();
+                  }}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                >
+                  <span className="text-xl">🚌</span>
+                  <span className="text-xs sm:text-sm leading-tight">+ Add Bus</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("reports")}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                >
+                  <span className="text-xl">📑</span>
+                  <span className="text-xs sm:text-sm leading-tight">Reports</span>
+                </button>
+              </div>
+            </div>
+
             {complianceAlerts.length > 0 && (
               <div className="rounded-2xl border border-amber-500/40 bg-amber-500/10 p-4 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-xs font-bold uppercase tracking-wider text-amber-300">
-                    ⚠️ Document & Service Alerts ({complianceAlerts.length})
+                    ⚠️ Paper &amp; Service Alerts ({complianceAlerts.length})
                   </div>
                   <button
                     onClick={() => setActiveTab("buses")}
                     className="text-xs font-semibold text-amber-400 underline hover:text-white"
                   >
-                    Manage Documents →
+                    Check Papers →
                   </button>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1874,10 +1940,10 @@ export default function FleetDashboardClient({
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
               <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-xs font-medium uppercase tracking-wider">Active Fleet</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Running Buses</span>
                   <div className="rounded-lg bg-blue-500/10 p-2 text-blue-400">🚍</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1886,12 +1952,12 @@ export default function FleetDashboardClient({
                   </span>
                   <span className="text-sm font-medium text-slate-400">/ {buses.length} Buses</span>
                 </div>
-                <div className="mt-2 text-xs text-emerald-400 font-medium">● All lines active in database</div>
+                <div className="mt-2 text-xs text-emerald-400 font-medium">● Active today</div>
               </div>
 
               <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-xs font-medium uppercase tracking-wider">Today's Collections</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Today&apos;s Cash In</span>
                   <div className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">💰</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1903,12 +1969,12 @@ export default function FleetDashboardClient({
                     )}
                   </span>
                 </div>
-                <div className="mt-2 text-xs text-slate-400">Morning & evening runs</div>
+                <div className="mt-2 text-xs text-slate-400">Morning &amp; evening cash</div>
               </div>
 
               <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-xs font-medium uppercase tracking-wider">Total Recorded Outflow</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Total Spend</span>
                   <div className="rounded-lg bg-rose-500/10 p-2 text-rose-400">⛽</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1917,7 +1983,7 @@ export default function FleetDashboardClient({
                 <div className="mt-2 text-xs text-slate-400 flex flex-wrap gap-1.5">
                   <span>Fuel: {formatCompactLKR(filteredData.totalFuel)}</span>
                   <span>•</span>
-                  <span>Maint: {formatCompactLKR(filteredData.totalMaintenanceCost)}</span>
+                  <span>Repairs: {formatCompactLKR(filteredData.totalMaintenanceCost)}</span>
                   <span>•</span>
                   <span>Other: {formatCompactLKR(filteredData.totalGeneralExpenses)}</span>
                 </div>
@@ -1925,7 +1991,7 @@ export default function FleetDashboardClient({
 
               <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-slate-900/80 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-amber-300">
-                  <span className="text-xs font-semibold uppercase tracking-wider">Net Operating Balance</span>
+                  <span className="text-xs font-semibold uppercase tracking-wider">Net Profit</span>
                   <div className="rounded-lg bg-amber-500/20 p-2 text-amber-400">📈</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1933,7 +1999,7 @@ export default function FleetDashboardClient({
                 </div>
                 <div className="mt-2 text-xs text-amber-200/80 flex gap-3">
                   <button onClick={() => setActiveTab("reports")} className="underline hover:text-white">
-                    P&L & Reports →
+                    Reports →
                   </button>
                   <button onClick={() => setActiveTab("analytics")} className="underline hover:text-white">
                     Charts →
@@ -1993,67 +2059,9 @@ export default function FleetDashboardClient({
                         </div>
                       </div>
 
-                      <div className="text-xs text-slate-400 font-mono">Capacity: {bus.capacity} seats</div>
+                      <div className="text-xs text-slate-400 font-mono">{bus.capacity} seats</div>
                     </div>
                   ))}
-                </div>
-              </div>
-
-              {/* Quick Actions Panel */}
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
-                  <h2 className="text-base font-bold text-white">Quick Actions</h2>
-                  <div className="space-y-2">
-                    <button
-                      onClick={handleOpenAddLog}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>📝</span> Record Daily Route Fare
-                      </span>
-                      <span className="text-amber-400">+</span>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab("expenses")}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>🧾</span> Record Operating Expense
-                      </span>
-                      <span className="text-amber-400">→</span>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab("maintenance")}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>🔧</span> Maintenance & Workshop Budget
-                      </span>
-                      <span className="text-amber-400">→</span>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab("reports")}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>📑</span> P&L, Vehicle & Crew Reports
-                      </span>
-                      <span className="text-amber-400">→</span>
-                    </button>
-
-                    <button
-                      onClick={handleOpenAddBus}
-                      className="w-full flex items-center justify-between rounded-xl bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-100 hover:bg-slate-700 transition-all border border-slate-700"
-                    >
-                      <span className="flex items-center gap-2">
-                        <span>🚌</span> Register Bus
-                      </span>
-                      <span className="text-amber-400">+</span>
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -2064,7 +2072,7 @@ export default function FleetDashboardClient({
         {/* TAB 2: BUSES & STATUTORY DOCUMENTS (FULL EDIT & DELETE) */}
         {/* ============================================================== */}
         {activeTab === "buses" && (
-          <div className={showAddBusModal ? "grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start" : ""}>
+          <div className={showAddBusModal ? "grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start" : ""}>
           <div className="min-w-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -2146,7 +2154,7 @@ export default function FleetDashboardClient({
 
             {/* Bus Side Panel (Add / Edit) */}
             {showAddBusModal && (
-              <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+              <div className="order-first lg:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
                       {editingBus ? "Edit Bus & Papers" : "Add New Bus"}
@@ -2283,7 +2291,7 @@ export default function FleetDashboardClient({
         {/* TAB 3: DAILY ROUTE LOGS (FULL EDIT & DELETE + KM & LITRES) */}
         {/* ============================================================== */}
         {activeTab === "logs" && (
-          <div className={showAddLogModal ? "grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start" : ""}>
+          <div className={showAddLogModal ? "grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start" : ""}>
           <div className="min-w-0 space-y-4 rounded-2xl border border-slate-800 bg-slate-900/60 p-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
@@ -2392,7 +2400,7 @@ export default function FleetDashboardClient({
 
             {/* Route Log Side Panel (Add / Edit) */}
             {showAddLogModal && (
-              <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+              <div className="order-first lg:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
                   <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                     <h3 className="text-base font-bold text-white">
                       {editingLog ? "Edit Day Cash Entry" : "Add Day Cash Entry (Rs.)"}

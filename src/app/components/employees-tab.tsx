@@ -706,7 +706,7 @@ export default function EmployeesTab({
       </div>
 
       {/* Main Content + Side Panel Layout */}
-      <div className={empModalOpen || attModalOpen || payModalOpen ? "grid grid-cols-1 xl:grid-cols-[1fr_420px] gap-6 items-start" : ""}>
+      <div className={empModalOpen || attModalOpen || payModalOpen ? "grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start" : ""}>
         <div className="min-w-0">
       {/* SUB-TAB 1: EMPLOYEES & SALARY SETUP */}
       {subTab === "roster" && (
@@ -1279,7 +1279,7 @@ export default function EmployeesTab({
 
       {/* SIDE PANEL: ADD / EDIT EMPLOYEE */}
       {empModalOpen && (
-        <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+        <div className="order-first lg:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
           <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
             <div>
               <h3 className="text-base font-bold text-white">
@@ -1475,7 +1475,7 @@ export default function EmployeesTab({
 
       {/* SIDE PANEL: ADD / EDIT SINGLE ATTENDANCE */}
       {attModalOpen && (
-        <div className="order-first xl:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+        <div className="order-first lg:order-last rounded-2xl border border-amber-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-base font-bold text-white">
               {editingAtt ? "Edit Attendance Record" : "Add Attendance Entry"}
@@ -1641,7 +1641,7 @@ export default function EmployeesTab({
 
       {/* SIDE PANEL: PAY SALARY */}
       {payModalOpen && (
-        <div className="order-first xl:order-last rounded-2xl border border-emerald-500/30 bg-slate-900 p-5 shadow-xl space-y-4 xl:sticky xl:top-20">
+        <div className="order-first lg:order-last rounded-2xl border border-emerald-500/30 bg-slate-900 p-5 shadow-xl space-y-4 lg:sticky lg:top-20">
           <div className="flex items-start justify-between gap-2 border-b border-slate-800 pb-3">
             <div>
               <h3 className="text-base font-bold text-white">

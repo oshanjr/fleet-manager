@@ -76,6 +76,21 @@ export default function FleetDashboardClient({
     if (next !== activeTab) {
       setPrevTab(activeTab);
       setActiveTab(next);
+      if (typeof window !== "undefined") {
+        window.history.pushState({ tab: next, prev: activeTab }, "", `#${next}`);
+      }
+    }
+  };
+
+  const handleBack = () => {
+    if (typeof window !== "undefined" && window.history.state?.tab && window.history.state.tab !== "overview") {
+      window.history.back();
+    } else {
+      const target = prevTab === activeTab ? "overview" : prevTab;
+      setActiveTab(target);
+      if (typeof window !== "undefined") {
+        window.history.replaceState({ tab: target, prev: "overview" }, "", target === "overview" ? window.location.pathname : `#${target}`);
+      }
     }
   };
 
@@ -133,6 +148,32 @@ export default function FleetDashboardClient({
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const hash = window.location.hash.replace("#", "") as TabId;
+    const validTabs: TabId[] = ["overview", "analytics", "buses", "logs", "maintenance", "crew", "expenses", "reports", "sync"];
+    const initialTab = validTabs.includes(hash) ? hash : "overview";
+    if (initialTab !== "overview") {
+      setActiveTab(initialTab);
+    }
+    window.history.replaceState({ tab: initialTab, prev: "overview" }, "", initialTab === "overview" ? window.location.pathname : `#${initialTab}`);
+
+    const onPopState = (e: PopStateEvent) => {
+      setSidebarOpen(false);
+      const stateTab = e.state?.tab as TabId | undefined;
+      if (stateTab && validTabs.includes(stateTab)) {
+        setActiveTab(stateTab);
+        setPrevTab((e.state?.prev as TabId) || "overview");
+      } else {
+        setActiveTab("overview");
+        setPrevTab("overview");
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const handleLogout = async () => {
@@ -1073,7 +1114,7 @@ export default function FleetDashboardClient({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setActiveTab(prevTab === activeTab ? "overview" : prevTab)}
+                    onClick={handleBack}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 active:scale-[0.98] transition-all"
                   >
                     ← Back
@@ -1913,7 +1954,7 @@ export default function FleetDashboardClient({
                     ⚠️ Paper &amp; Service Alerts ({complianceAlerts.length})
                   </div>
                   <button
-                    onClick={() => setActiveTab("buses")}
+                    onClick={() => navigateTo("buses")}
                     className="text-xs font-semibold text-amber-400 underline hover:text-white"
                   >
                     Check Papers →
@@ -1995,10 +2036,10 @@ export default function FleetDashboardClient({
                   <span className="text-2xl sm:text-3xl font-extrabold text-amber-400">{formatLKR(filteredData.netProfit)}</span>
                 </div>
                 <div className="mt-2 text-xs text-amber-200/80 flex gap-3">
-                  <button onClick={() => setActiveTab("reports")} className="underline hover:text-white">
+                  <button onClick={() => navigateTo("reports")} className="underline hover:text-white">
                     Reports →
                   </button>
-                  <button onClick={() => setActiveTab("analytics")} className="underline hover:text-white">
+                  <button onClick={() => navigateTo("analytics")} className="underline hover:text-white">
                     Charts →
                   </button>
                 </div>

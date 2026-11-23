@@ -150,7 +150,7 @@ export default function ReportsTab(props: {
 
         {/* KPI strip */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Kpi label="Gross Revenue" value={formatLKR(r.revenue)} delta={delta(r.revenue, p.revenue)} good="up" />
+          <Kpi label="Total Cash In" value={formatLKR(r.revenue)} delta={delta(r.revenue, p.revenue)} good="up" />
           <Kpi label="Total Expenses" value={formatLKR(r.totalExpenses)} delta={delta(r.totalExpenses, p.totalExpenses)} good="down" />
           <Kpi label="Net Profit" value={formatLKR(r.net)} delta={delta(r.net, p.net)} good="up" accent={r.net >= 0 ? "text-emerald-400" : "text-rose-400"} />
           <Kpi label="Profit Margin" value={`${r.margin.toFixed(1)}%`} sub={`${r.operatingDays} operating day(s)`} />
@@ -221,7 +221,7 @@ function PnL({ r, p, revenueTarget }: { r: PeriodReport; p: PeriodReport; revenu
             <tr><td colSpan={4} className="pt-3 pb-1 text-[11px] font-bold uppercase tracking-wider text-emerald-400">Income</td></tr>
             <Row label="Morning fare collections" cur={r.morning} prev={p.morning} indent />
             <Row label="Evening fare collections" cur={r.evening} prev={p.evening} indent />
-            <Row label="Gross Revenue" cur={r.revenue} prev={p.revenue} bold />
+            <Row label="Total Cash In" cur={r.revenue} prev={p.revenue} bold />
 
             <tr><td colSpan={4} className="pt-4 pb-1 text-[11px] font-bold uppercase tracking-wider text-rose-400">Direct Operating Costs</td></tr>
             <Row label="Diesel / fuel" cur={r.fuel} prev={p.fuel} neg indent />
@@ -254,10 +254,10 @@ function PnL({ r, p, revenueTarget }: { r: PeriodReport; p: PeriodReport; revenu
       <div className="space-y-4">
         <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2 text-xs">
           <h4 className="text-sm font-bold text-white">Key Ratios</h4>
-          <Ratio label="Fuel cost / revenue" v={`${pct(r.fuel, r.revenue).toFixed(1)}%`} />
-          <Ratio label="Crew cost / revenue" v={`${pct(tripCrew, r.revenue).toFixed(1)}%`} />
-          <Ratio label="Maintenance / revenue" v={`${pct(r.maintenance, r.revenue).toFixed(1)}%`} />
-          <Ratio label="Avg revenue / operating day" v={formatLKR(r.avgDailyRevenue)} />
+          <Ratio label="Fuel / cash in" v={`${pct(r.fuel, r.revenue).toFixed(1)}%`} />
+          <Ratio label="Staff pay / cash in" v={`${pct(tripCrew, r.revenue).toFixed(1)}%`} />
+          <Ratio label="Repairs / cash in" v={`${pct(r.maintenance, r.revenue).toFixed(1)}%`} />
+          <Ratio label="Avg cash in / day" v={formatLKR(r.avgDailyRevenue)} />
           <Ratio label="Avg net / operating day" v={formatLKR(r.avgDailyNet)} />
           <Ratio label="Total km run" v={r.km ? r.km.toLocaleString("en-LK") + " km" : "—"} />
           <Ratio label="Fuel consumed" v={r.liters ? r.liters.toLocaleString("en-LK") + " L" : "—"} />
@@ -268,7 +268,7 @@ function PnL({ r, p, revenueTarget }: { r: PeriodReport; p: PeriodReport; revenu
 
         {revenueTarget > 0 && (
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-2 text-xs">
-            <h4 className="text-sm font-bold text-white">Monthly Revenue Target</h4>
+            <h4 className="text-sm font-bold text-white">Monthly Cash Target</h4>
             <div className="flex justify-between text-slate-400">
               <span>{formatLKR(r.revenue)}</span>
               <span>of {formatLKR(revenueTarget)}</span>
@@ -309,7 +309,7 @@ function BusTable({ r }: { r: PeriodReport }) {
           <tr>
             <th className="py-2.5 px-3 text-left">Bus</th>
             <th className={th}>Days</th>
-            <th className={th}>Revenue</th>
+            <th className={th}>Cash In</th>
             <th className={th}>Avg/Day</th>
             <th className={th}>Fuel</th>
             <th className={th}>Km</th>
@@ -436,7 +436,7 @@ function DailyTable({ r }: { r: PeriodReport }) {
           <tr>
             <th className="py-2.5 px-3 text-left">Date</th>
             <th className={th}>Buses</th>
-            <th className={th}>Revenue</th>
+            <th className={th}>Cash In</th>
             <th className={th}>Fuel</th>
             <th className={th}>Tolls</th>
             <th className={th}>Commission</th>

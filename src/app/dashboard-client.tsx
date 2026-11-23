@@ -69,9 +69,16 @@ export default function FleetDashboardClient({
   const router = useRouter();
   const [currentUser] = useState<SessionUser>(initialUser);
 
-  const [activeTab, setActiveTab] = useState<
-    "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync" | "settings"
-  >("overview");
+  type TabId = "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync" | "settings";
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [prevTab, setPrevTab] = useState<TabId>("overview");
+
+  const navigateTo = (next: TabId) => {
+    if (next !== activeTab) {
+      setPrevTab(activeTab);
+      setActiveTab(next);
+    }
+  };
 
   const [buses, setBuses] = useState<Bus[]>([]);
   const [routeLogs, setRouteLogs] = useState<RouteLog[]>([]);
@@ -957,7 +964,7 @@ export default function FleetDashboardClient({
               <button
                 key={item.id}
                 onClick={() => {
-                  setActiveTab(item.id);
+                  navigateTo(item.id);
                   onSelect?.();
                 }}
                 className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-3 text-left text-sm md:text-xs font-semibold transition-all ${
@@ -1083,8 +1090,38 @@ export default function FleetDashboardClient({
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 min-w-0 px-4 sm:px-6 py-6 space-y-6">
-          <div className="mx-auto max-w-7xl space-y-6">
+        <main className="flex-1 min-w-0 px-4 sm:px-6 py-5 sm:py-6 space-y-5">
+          <div className="mx-auto max-w-7xl space-y-5">
+            {activeTab !== "overview" && (
+              <div className="no-print flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800 bg-slate-900/70 px-3.5 py-2.5">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(prevTab === activeTab ? "overview" : prevTab)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 active:scale-[0.98] transition-all"
+                  >
+                    ← Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigateTo("overview")}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-slate-800 active:scale-[0.98] transition-all"
+                  >
+                    🏠 Home
+                  </button>
+                </div>
+                <span className="text-xs font-semibold text-slate-400">
+                  {(() => {
+                    const allItems = navSections.reduce<{ id: TabId; label: string; icon: string }[]>(
+                      (acc, s) => [...acc, ...s.items],
+                      []
+                    );
+                    const cur = allItems.find((i) => i.id === activeTab);
+                    return cur ? `${cur.icon} ${cur.label}` : "";
+                  })()}
+                </span>
+              </div>
+            )}
         {loadError && (
           <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-300 flex items-center justify-between">
             <span>⚠️ {loadError}</span>
@@ -1478,7 +1515,7 @@ export default function FleetDashboardClient({
                   </span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Granular breakdown of fare revenues, fuel costs, toll fees, and workshop maintenance in Sri Lankan Rupees (Rs.)
+                  Simple view of cash in, fuel, road fees, repairs, and net profit (Rs.)
                 </p>
               </div>
 
@@ -1543,7 +1580,7 @@ export default function FleetDashboardClient({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-xs font-medium uppercase tracking-wider">Gross Fares Collected</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Total Cash In</span>
                   <div className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">💵</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1557,7 +1594,7 @@ export default function FleetDashboardClient({
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-xs font-medium uppercase tracking-wider">Total Operating Expenses</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Total Expenses</span>
                   <div className="rounded-lg bg-rose-500/10 p-2 text-rose-400">📉</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1565,14 +1602,14 @@ export default function FleetDashboardClient({
                 </div>
                 <div className="mt-2 text-xs text-slate-400">
                   {filteredData.grossRevenue > 0
-                    ? `${((filteredData.totalExpenses / filteredData.grossRevenue) * 100).toFixed(1)}% of total revenues`
-                    : "No operations in window"}
+                    ? `${((filteredData.totalExpenses / filteredData.grossRevenue) * 100).toFixed(1)}% of total cash in`
+                    : "No trips yet"}
                 </div>
               </div>
 
               <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-slate-900/80 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-amber-300">
-                  <span className="text-xs font-semibold uppercase tracking-wider">Net Fleet Profit</span>
+                  <span className="text-xs font-semibold uppercase tracking-wider">Net Profit</span>
                   <div className="rounded-lg bg-amber-500/20 p-2 text-amber-400">📈</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
@@ -1581,22 +1618,22 @@ export default function FleetDashboardClient({
                   </span>
                 </div>
                 <div className="mt-2 text-xs text-amber-200/80 font-medium flex items-center justify-between">
-                  <span>Margin: {filteredData.profitMargin.toFixed(1)}%</span>
+                  <span>Profit %: {filteredData.profitMargin.toFixed(1)}%</span>
                   <span>Avg/Day: {formatCompactLKR(filteredData.netProfit / filteredData.uniqueDays)}</span>
                 </div>
               </div>
 
               <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm backdrop-blur-sm">
                 <div className="flex items-center justify-between text-slate-400">
-                  <span className="text-xs font-medium uppercase tracking-wider">Fuel Cost & Efficiency</span>
+                  <span className="text-xs font-medium uppercase tracking-wider">Fuel Spend</span>
                   <div className="rounded-lg bg-amber-500/10 p-2 text-amber-400">⛽</div>
                 </div>
                 <div className="mt-3 flex items-baseline gap-2">
                   <span className="text-2xl sm:text-3xl font-extrabold text-white">{formatLKR(filteredData.totalFuel)}</span>
                 </div>
                 <div className="mt-2 text-xs text-slate-400 flex items-center justify-between">
-                  <span>Fuel Ratio: {filteredData.fuelRatio.toFixed(1)}%</span>
-                  <span className="text-emerald-400">Normal Range</span>
+                  <span>Fuel %: {filteredData.fuelRatio.toFixed(1)}%</span>
+                  <span className="text-emerald-400">Normal</span>
                 </div>
               </div>
             </div>
@@ -1606,13 +1643,13 @@ export default function FleetDashboardClient({
               <div className="lg:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <h3 className="text-base font-bold text-white">Daily Operational Timeline (LKR)</h3>
-                    <p className="text-xs text-slate-400">Comparative revenue vs expenses per operating day</p>
+                    <h3 className="text-base font-bold text-white">Daily Cash vs Expenses (Rs.)</h3>
+                    <p className="text-xs text-slate-400">Cash in vs expenses for each day</p>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
                     <div className="flex items-center gap-1.5">
                       <span className="h-3 w-3 rounded-sm bg-emerald-500"></span>
-                      <span className="text-slate-300">Revenue</span>
+                      <span className="text-slate-300">Cash In</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span className="h-3 w-3 rounded-sm bg-rose-500"></span>
@@ -1852,59 +1889,77 @@ export default function FleetDashboardClient({
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <button
                   onClick={() => {
-                    setActiveTab("logs");
+                    navigateTo("logs");
                     handleOpenAddLog();
                   }}
-                  className="flex flex-col items-start justify-between gap-2 rounded-xl bg-amber-500 p-4 text-left text-slate-950 font-bold shadow-md shadow-amber-500/20 hover:bg-amber-400 active:scale-[0.98] transition-all min-h-[88px]"
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl bg-amber-500 p-4 text-left text-slate-950 font-bold shadow-md shadow-amber-500/20 hover:bg-amber-400 active:scale-[0.98] transition-all min-h-[96px]"
                 >
                   <span className="text-xl">📝</span>
-                  <span className="text-xs sm:text-sm leading-tight">+ Add Day Cash</span>
+                  <div>
+                    <div className="text-xs sm:text-sm leading-tight">+ Add Day Cash</div>
+                    <div className="text-[10px] font-medium text-slate-900/80 mt-0.5">Morning &amp; evening</div>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => {
-                    setActiveTab("maintenance");
+                    navigateTo("maintenance");
                     handleOpenAddMaint();
                   }}
-                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[96px]"
                 >
                   <span className="text-xl">🔧</span>
-                  <span className="text-xs sm:text-sm leading-tight">+ Add Repair</span>
+                  <div>
+                    <div className="text-xs sm:text-sm leading-tight">+ Add Repair</div>
+                    <div className="text-[10px] font-normal text-slate-400 mt-0.5">Garage &amp; service</div>
+                  </div>
                 </button>
 
                 <button
-                  onClick={() => setActiveTab("expenses")}
-                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                  onClick={() => navigateTo("expenses")}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[96px]"
                 >
                   <span className="text-xl">🧾</span>
-                  <span className="text-xs sm:text-sm leading-tight">Other Expenses</span>
+                  <div>
+                    <div className="text-xs sm:text-sm leading-tight">Other Expenses</div>
+                    <div className="text-[10px] font-normal text-slate-400 mt-0.5">Licence, rent, bills</div>
+                  </div>
                 </button>
 
                 <button
-                  onClick={() => setActiveTab("crew")}
-                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                  onClick={() => navigateTo("crew")}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[96px]"
                 >
                   <span className="text-xl">👥</span>
-                  <span className="text-xs sm:text-sm leading-tight">Staff &amp; Pay</span>
+                  <div>
+                    <div className="text-xs sm:text-sm leading-tight">Staff &amp; Pay</div>
+                    <div className="text-[10px] font-normal text-slate-400 mt-0.5">Attendance &amp; salary</div>
+                  </div>
                 </button>
 
                 <button
                   onClick={() => {
-                    setActiveTab("buses");
+                    navigateTo("buses");
                     handleOpenAddBus();
                   }}
-                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[96px]"
                 >
                   <span className="text-xl">🚌</span>
-                  <span className="text-xs sm:text-sm leading-tight">+ Add Bus</span>
+                  <div>
+                    <div className="text-xs sm:text-sm leading-tight">+ Add Bus</div>
+                    <div className="text-[10px] font-normal text-slate-400 mt-0.5">Bus &amp; papers</div>
+                  </div>
                 </button>
 
                 <button
-                  onClick={() => setActiveTab("reports")}
-                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[88px]"
+                  onClick={() => navigateTo("reports")}
+                  className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-700 bg-slate-800 p-4 text-left text-slate-100 font-semibold hover:bg-slate-700 active:scale-[0.98] transition-all min-h-[96px]"
                 >
                   <span className="text-xl">📑</span>
-                  <span className="text-xs sm:text-sm leading-tight">Reports</span>
+                  <div>
+                    <div className="text-xs sm:text-sm leading-tight">Reports</div>
+                    <div className="text-[10px] font-normal text-slate-400 mt-0.5">Net profit &amp; print</div>
+                  </div>
                 </button>
               </div>
             </div>

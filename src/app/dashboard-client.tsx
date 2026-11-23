@@ -612,8 +612,8 @@ export default function FleetDashboardClient({
     setEditingLog(log);
     setLogBusId(log.busId);
     setLogDate(log.date);
-    setLogMorning(log.morningCollection.toString());
-    setLogEvening(log.eveningCollection.toString());
+    setLogMorning((log.morningCollection + log.eveningCollection).toString());
+    setLogEvening("0");
     setLogFuel(log.fuelCost.toString());
     setLogTolls(log.tollFees.toString());
     setLogKmRun(log.kmRun ? log.kmRun.toString() : "");
@@ -632,7 +632,7 @@ export default function FleetDashboardClient({
         busId: logBusId,
         date: logDate,
         morningCollection: Number(logMorning) || 0,
-        eveningCollection: Number(logEvening) || 0,
+        eveningCollection: 0,
         fuelCost: Number(logFuel) || 0,
         tollAndLineFees: Number(logTolls) || 0,
         kmRun: logKmRun,
@@ -2373,9 +2373,7 @@ export default function FleetDashboardClient({
                   <tr>
                     <th className="py-3 px-3">Bus</th>
                     <th className="py-3 px-3">Date</th>
-                    <th className="py-3 px-3">Morning</th>
-                    <th className="py-3 px-3">Evening</th>
-                    <th className="py-3 px-3 text-emerald-400">Total Fare</th>
+                    <th className="py-3 px-3 text-emerald-400">Today&apos;s Cash</th>
                     <th className="py-3 px-3">Km / Fuel</th>
                     <th className="py-3 px-3 text-rose-400">Fuel Cost</th>
                     <th className="py-3 px-3 text-rose-400">Tolls / Other</th>
@@ -2398,8 +2396,6 @@ export default function FleetDashboardClient({
                           {log.notes && <div className="text-[10px] font-sans font-normal text-slate-500">{log.notes}</div>}
                         </td>
                         <td className="py-3.5 px-3 text-slate-400 font-mono">{log.date}</td>
-                        <td className="py-3.5 px-3">{formatLKR(log.morningCollection)}</td>
-                        <td className="py-3.5 px-3">{formatLKR(log.eveningCollection)}</td>
                         <td className="py-3.5 px-3 font-semibold text-emerald-400">{formatLKR(gross)}</td>
                         <td className="py-3.5 px-3 font-mono text-slate-400">
                           {log.kmRun ? `${log.kmRun} km` : "—"}
@@ -2474,33 +2470,21 @@ export default function FleetDashboardClient({
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-xs font-semibold text-slate-300">Morning Cash (Rs.)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          value={logMorning}
-                          onChange={(e) => setLogMorning(e.target.value)}
-                          placeholder="45000.00"
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-semibold text-slate-300">Evening Cash (Rs.)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          required
-                          value={logEvening}
-                          onChange={(e) => setLogEvening(e.target.value)}
-                          placeholder="52000.00"
-                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                        />
-                      </div>
+                    <div>
+                      <label className="text-xs font-semibold text-slate-300">Today&apos;s Cash (Rs.)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        required
+                        value={logMorning}
+                        onChange={(e) => {
+                          setLogMorning(e.target.value);
+                          setLogEvening("0");
+                        }}
+                        placeholder="97000.00"
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                      />
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">

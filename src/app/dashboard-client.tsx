@@ -43,7 +43,6 @@ import { todayLK, addDays } from "@/lib/dates";
 import EmployeesTab from "./components/employees-tab";
 import ExpensesTab from "./components/expenses-tab";
 import ReportsTab from "./components/reports-tab";
-import SettingsTab from "./components/settings-tab";
 
 function DocBadge({ date, today }: { date?: string; today: string }) {
   const d = daysUntil(date, today);
@@ -69,7 +68,7 @@ export default function FleetDashboardClient({
   const router = useRouter();
   const [currentUser] = useState<SessionUser>(initialUser);
 
-  type TabId = "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync" | "settings";
+  type TabId = "overview" | "analytics" | "buses" | "logs" | "maintenance" | "crew" | "expenses" | "reports" | "sync";
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [prevTab, setPrevTab] = useState<TabId>("overview");
 
@@ -93,9 +92,6 @@ export default function FleetDashboardClient({
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState("");
   const isManager = currentUser.role === "FLEET_MANAGER";
-
-  // Maintenance Monthly Budget (persisted in settings)
-  const maintenanceBudget = settings.maintenanceBudget;
 
   // Analytics filter state
   const [timeframe, setTimeframe] = useState<"daily" | "weekly" | "monthly" | "all">("monthly");
@@ -749,15 +745,12 @@ export default function FleetDashboardClient({
     }
   };
 
-  // Maintenance Budget Calculations
+  // Current Month Repair Spend
   const currentMonthMaintSpend = useMemo(() => {
     return maintenanceRecords
       .filter((m) => m.date.startsWith(thisMonthStr))
       .reduce((sum, m) => sum + m.cost, 0);
   }, [maintenanceRecords, thisMonthStr]);
-
-  const budgetUsagePercent = maintenanceBudget > 0 ? (currentMonthMaintSpend / maintenanceBudget) * 100 : 0;
-  const remainingBudget = maintenanceBudget - currentMonthMaintSpend;
 
   // Highest Maintenance Bus
   const highestMaintenanceBus = useMemo(() => {
@@ -946,7 +939,6 @@ export default function FleetDashboardClient({
         { id: "crew", label: "Staff & Salaries", icon: "👥" },
         { id: "buses", label: "Buses & Papers", icon: "🚍" },
         { id: "sync", label: "Save Day Total", icon: "🔄" },
-        { id: "settings", label: "Settings", icon: "⚙️" },
       ],
     },
   ] as const;
@@ -1019,15 +1011,8 @@ export default function FleetDashboardClient({
             </div>
           </div>
 
-          {/* User profile, Settings & Logout */}
+          {/* User profile & Logout */}
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={() => setActiveTab("settings")}
-              className="rounded-lg border border-slate-700 bg-slate-800 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-slate-700 transition-colors"
-              title="Commission Rates, Base Wages & Monthly Budgets"
-            >
-              ⚙️ <span className="hidden sm:inline">Settings</span>
-            </button>
             <div className="hidden sm:block text-right">
               <div className="text-xs font-bold text-white">{currentUser.name}</div>
               <div className="text-[10px] font-mono text-amber-400">
@@ -1078,15 +1063,6 @@ export default function FleetDashboardClient({
         {/* Tablet & Desktop Sidebar */}
         <aside className="no-print hidden md:flex md:w-56 lg:w-64 md:flex-col md:shrink-0 border-r border-slate-800 bg-slate-900/50 sticky top-[61px] h-[calc(100vh-61px)]">
           {renderNavItems()}
-          <div className="border-t border-slate-800 p-3">
-            <button
-              onClick={() => setActiveTab("settings")}
-              className="w-full flex items-center gap-2.5 rounded-xl border border-slate-800 bg-slate-950/70 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-amber-500/40 hover:text-amber-400 transition-colors"
-            >
-              <span>⚙️</span>
-              <span>Settings</span>
-            </button>
-          </div>
         </aside>
 
         {/* Main Content Area */}
@@ -1194,12 +1170,6 @@ export default function FleetDashboardClient({
                   ⬇ CSV
                 </button>
                 <button
-                  onClick={() => setActiveTab("settings")}
-                  className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-colors"
-                >
-                  ⚙️ Set Budget
-                </button>
-                <button
                   onClick={handleOpenAddMaint}
                   className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-bold text-slate-950 hover:bg-amber-400 transition-colors shadow-md shadow-amber-500/20"
                 >
@@ -1208,48 +1178,20 @@ export default function FleetDashboardClient({
               </div>
             </div>
 
-            {/* Maintenance Budget Meter & Calculating Cards */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {/* Monthly Budget Consumption Meter */}
-              <div className="sm:col-span-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Monthly Workshop Budget</span>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                        budgetUsagePercent > 100
-                          ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
-                          : budgetUsagePercent > 75
-                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                          : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-                      }`}
-                    >
-                      {budgetUsagePercent.toFixed(1)}% Consumed
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono font-bold text-white">{formatLKR(maintenanceBudget)}</span>
+            {/* Repair Summary Cards */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {/* Spent This Month */}
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-sm">
+                <div className="flex items-center justify-between text-slate-400">
+                  <span className="text-xs font-medium uppercase tracking-wider">Repairs This Month</span>
+                  <div className="rounded-lg bg-amber-500/10 p-2 text-amber-400">📅</div>
                 </div>
-
-                <div className="space-y-1">
-                  <div className="h-3 w-full rounded-full bg-slate-950 overflow-hidden border border-slate-800 p-0.5">
-                    <div
-                      style={{ width: `${Math.min(100, Math.max(2, budgetUsagePercent))}%` }}
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        budgetUsagePercent > 100 ? "bg-rose-500 animate-pulse" : budgetUsagePercent > 75 ? "bg-amber-500" : "bg-emerald-500"
-                      }`}
-                    ></div>
-                  </div>
-                  <div className="flex justify-between text-[11px] text-slate-400 pt-0.5">
-                    <span>Spent this Month: <strong className="text-white">{formatLKR(currentMonthMaintSpend)}</strong></span>
-                    <span>
-                      {remainingBudget >= 0 ? (
-                        <span className="text-emerald-400">Remaining: {formatLKR(remainingBudget)}</span>
-                      ) : (
-                        <span className="text-rose-400 font-bold">Over Budget: {formatLKR(Math.abs(remainingBudget))}</span>
-                      )}
-                    </span>
-                  </div>
+                <div className="mt-3 flex items-baseline gap-2">
+                  <span className="text-2xl font-extrabold text-white">
+                    {formatLKR(currentMonthMaintSpend)}
+                  </span>
                 </div>
+                <div className="mt-2 text-xs text-slate-400">Month: {thisMonthStr}</div>
               </div>
 
               {/* Total Workshop Spend */}
@@ -2756,13 +2698,6 @@ export default function FleetDashboardClient({
               </div>
             </div>
           </div>
-        )}
-        {activeTab === "settings" && (
-          <SettingsTab
-            settings={settings}
-            canEdit={isManager}
-            onSaved={loadData}
-          />
         )}
           </div>
         </main>

@@ -67,7 +67,7 @@ export default function EmployeesTab({
     nic: "",
     licenseNumber: "",
     salaryType: "DAILY" as "DAILY" | "MONTHLY",
-    baseSalary: String(settings.driverBaseWage),
+    baseSalary: "",
     busId: "",
     isActive: true,
     joinedDate: todayStr,
@@ -89,7 +89,7 @@ export default function EmployeesTab({
     busId: "",
     date: todayStr,
     status: "PRESENT" as AttendanceStatus,
-    dailyWage: String(settings.driverBaseWage),
+    dailyWage: "0",
     advanceTaken: "0",
   });
 
@@ -282,7 +282,7 @@ export default function EmployeesTab({
       nic: "",
       licenseNumber: "",
       salaryType: "DAILY",
-      baseSalary: String(settings.driverBaseWage),
+      baseSalary: "",
       busId: "",
       isActive: true,
       joinedDate: todayStr,
@@ -437,7 +437,7 @@ export default function EmployeesTab({
       date: attendanceDate,
       status: "PRESENT",
       dailyWage: String(
-        first ? computeDailyRate(first, "PRESENT") : settings.driverBaseWage
+        first ? computeDailyRate(first, "PRESENT") : 0
       ),
       advanceTaken: "0",
     });
@@ -1324,14 +1324,6 @@ export default function EmployeesTab({
                       setEmpForm({
                         ...empForm,
                         role,
-                        baseSalary:
-                          !editingEmp && empForm.salaryType === "DAILY"
-                            ? String(
-                                role === "DRIVER"
-                                  ? settings.driverBaseWage
-                                  : settings.conductorBaseWage
-                              )
-                            : empForm.baseSalary,
                       });
                     }}
                     className={inputCls}

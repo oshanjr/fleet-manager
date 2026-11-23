@@ -5,6 +5,7 @@ import { getSessionUser } from "@/lib/auth";
 import { ActionResult } from "@/types";
 import { revalidatePath } from "next/cache";
 import { dayStr, toDayDate, toOptionalDayDate, todayLK } from "@/lib/dates";
+import { EXPENSE_CATEGORIES } from "@/lib/fleet-calc";
 
 // ============================================================================
 // AUTH GUARDS — every server action is a public HTTP endpoint, so each one
@@ -126,6 +127,48 @@ export async function updateSettingsAction(
   }
 }
 
+async function loadExpenseCategories(): Promise<string[]> {
+  const row = await prisma.appSetting.findUnique({ where: { key: "expenseCategories" } });
+  if (row?.value) {
+    try {
+      const parsed = JSON.parse(row.value);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+      }
+    } catch {
+      // fall back to default
+    }
+  }
+  return [...EXPENSE_CATEGORIES];
+}
+
+export async function saveExpenseCategoriesAction(
+  categories: string[]
+): Promise<ActionResult<string[]>> {
+  try {
+    await requireUser();
+    const seen = new Set<string>();
+    const clean: string[] = [];
+    for (const raw of categories) {
+      const c = (raw || "").trim();
+      if (c && !seen.has(c.toLowerCase())) {
+        seen.add(c.toLowerCase());
+        clean.push(c);
+      }
+    }
+    if (clean.length === 0) clean.push("Other");
+    await prisma.appSetting.upsert({
+      where: { key: "expenseCategories" },
+      update: { value: JSON.stringify(clean) },
+      create: { key: "expenseCategories", value: JSON.stringify(clean) },
+    });
+    revalidatePath("/");
+    return { success: true, data: clean };
+  } catch (error) {
+    return fail(error);
+  }
+}
+
 // ============================================================================
 // LOAD EVERYTHING FOR THE DASHBOARD
 // ============================================================================
@@ -140,6 +183,7 @@ export async function getFleetDataAction() {
       expenses,
       summary,
       settings,
+      expenseCategories,
       employees,
       salaryPayments,
     ] = await Promise.all([
@@ -166,6 +210,7 @@ export async function getFleetDataAction() {
       }),
       prisma.dailyFleetSummary.findFirst({ orderBy: { date: "desc" } }),
       loadSettings(),
+      loadExpenseCategories(),
       prisma.employee.findMany({
         include: { bus: true },
         orderBy: { createdAt: "desc" },
@@ -181,6 +226,7 @@ export async function getFleetDataAction() {
       success: true as const,
       data: {
         settings,
+        expenseCategories,
         buses: buses.map((b) => ({
           id: b.id,
           regNumber: b.registrationNumber,

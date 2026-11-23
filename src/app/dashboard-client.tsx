@@ -32,6 +32,7 @@ import {
   Expense,
   Settings,
   DEFAULT_SETTINGS,
+  EXPENSE_CATEGORIES,
   DOCUMENT_FIELDS,
   formatLKR,
   formatCompactLKR,
@@ -102,6 +103,7 @@ export default function FleetDashboardClient({
   const [salaryPayments, setSalaryPayments] = useState<SalaryPayment[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [expenseCategories, setExpenseCategories] = useState<string[]>([...EXPENSE_CATEGORIES]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -133,6 +135,7 @@ export default function FleetDashboardClient({
         setSalaryPayments((res.data.salaryPayments ?? []) as SalaryPayment[]);
         setExpenses(res.data.expenses as Expense[]);
         setSettings(res.data.settings);
+        if (res.data.expenseCategories) setExpenseCategories(res.data.expenseCategories);
         setLoadError("");
       } else if (!res.success) {
         setLoadError(res.error);
@@ -1155,6 +1158,7 @@ export default function FleetDashboardClient({
           <ExpensesTab
             expenses={expenses}
             buses={buses}
+            expenseCategories={expenseCategories}
             todayStr={todayStr}
             onChanged={loadData}
           />

@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { addExpenseAction, updateExpenseAction, deleteExpenseAction } from "@/app/actions/fleet";
-import { Bus, Expense, EXPENSE_CATEGORIES, formatLKR, downloadCSV, pct } from "@/lib/fleet-calc";
+import { addExpenseAction, updateExpenseAction, deleteExpenseAction, saveExpenseCategoriesAction } from "@/app/actions/fleet";
+import { Bus, Expense, formatLKR, downloadCSV, pct } from "@/lib/fleet-calc";
 
 const input =
   "mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none";
@@ -10,11 +10,13 @@ const input =
 export default function ExpensesTab({
   expenses,
   buses,
+  expenseCategories,
   todayStr,
   onChanged,
 }: {
   expenses: Expense[];
   buses: Bus[];
+  expenseCategories: string[];
   todayStr: string;
   onChanged: () => Promise<void>;
 }) {
@@ -25,9 +27,13 @@ export default function ExpensesTab({
 
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Expense | null>(null);
-  const [form, setForm] = useState({ date: todayStr, category: EXPENSE_CATEGORIES[0] as string, description: "", amount: "", paidTo: "", busId: "" });
+  const [form, setForm] = useState({ date: todayStr, category: expenseCategories[0] || "Other", description: "", amount: "", paidTo: "", busId: "" });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  const [manageCats, setManageCats] = useState(false);
+  const [newCat, setNewCat] = useState("");
+  const [savingCats, setSavingCats] = useState(false);
 
   const filtered = useMemo(
     () =>
@@ -58,7 +64,7 @@ export default function ExpensesTab({
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ date: todayStr, category: EXPENSE_CATEGORIES[0], description: "", amount: "", paidTo: "", busId: "" });
+    setForm({ date: todayStr, category: expenseCategories[0] || "Other", description: "", amount: "", paidTo: "", busId: "" });
     setError("");
     setOpen(true);
   };
@@ -95,6 +101,32 @@ export default function ExpensesTab({
       ["", "", "", "", "TOTAL", total],
     ]);
 
+  const handleAddCategory = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const name = newCat.trim();
+    if (!name) return;
+    setSavingCats(true);
+    const res = await saveExpenseCategoriesAction([...expenseCategories, name]);
+    setSavingCats(false);
+    if (!res.success) return alert(res.error);
+    setNewCat("");
+    if (open) setForm((f) => ({ ...f, category: name }));
+    await onChanged();
+  };
+
+  const handleDeleteCategory = async (cat: string) => {
+    if (expenseCategories.length <= 1) return;
+    if (!confirm(`Delete category "${cat}"?`)) return;
+    setSavingCats(true);
+    const next = expenseCategories.filter((c) => c !== cat);
+    const res = await saveExpenseCategoriesAction(next);
+    setSavingCats(false);
+    if (!res.success) return alert(res.error);
+    if (category === cat) setCategory("");
+    if (form.category === cat) setForm((f) => ({ ...f, category: next[0] || "Other" }));
+    await onChanged();
+  };
+
   const change = prevMonthTotal > 0 ? ((total - prevMonthTotal) / prevMonthTotal) * 100 : 0;
 
   return (
@@ -106,7 +138,14 @@ export default function ExpensesTab({
             Insurance, yearly licence, permits, lease payments, tyres, rent and other costs not in daily cash entries
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setManageCats((v) => !v)}
+            className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+          >
+            🏷️ {manageCats ? "Hide Categories" : "Categories"}
+          </button>
           <button onClick={exportCSV} className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700">
             ⬇ CSV
           </button>
@@ -115,6 +154,54 @@ export default function ExpensesTab({
           </button>
         </div>
       </div>
+
+      {manageCats && (
+        <div className="rounded-2xl border border-amber-500/30 bg-slate-900/80 p-5 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-white">Expense Categories</h3>
+              <p className="text-xs text-slate-400">Add new categories or click ✕ to remove ones you don&apos;t need.</p>
+            </div>
+            <form onSubmit={handleAddCategory} className="flex gap-2">
+              <input
+                type="text"
+                value={newCat}
+                onChange={(e) => setNewCat(e.target.value)}
+                placeholder="New category name..."
+                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={savingCats || !newCat.trim()}
+                className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-amber-400 disabled:opacity-50"
+              >
+                + Add
+              </button>
+            </form>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {expenseCategories.map((c) => (
+              <span
+                key={c}
+                className="inline-flex items-center gap-1.5 rounded-full border border-slate-700 bg-slate-950 px-3 py-1 text-xs text-slate-200"
+              >
+                <span>{c}</span>
+                {expenseCategories.length > 1 && (
+                  <button
+                    type="button"
+                    disabled={savingCats}
+                    onClick={() => handleDeleteCategory(c)}
+                    className="text-rose-400 hover:text-rose-300 font-bold"
+                    title={`Delete ${c}`}
+                  >
+                    ✕
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
@@ -161,7 +248,7 @@ export default function ExpensesTab({
             <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={input + " mt-0"} title="Month (clear for all)" />
             <select value={category} onChange={(e) => setCategory(e.target.value)} className={input + " mt-0"}>
               <option value="">All categories</option>
-              {EXPENSE_CATEGORIES.map((c) => (
+              {expenseCategories.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -234,9 +321,18 @@ export default function ExpensesTab({
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold text-slate-300">Category</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-slate-300">Category</label>
+                  <button
+                    type="button"
+                    onClick={() => setManageCats((v) => !v)}
+                    className="text-[11px] font-semibold text-amber-400 hover:underline"
+                  >
+                    {manageCats ? "Done" : "+ Add / Delete"}
+                  </button>
+                </div>
                 <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className={input}>
-                  {EXPENSE_CATEGORIES.map((c) => (
+                  {(expenseCategories.includes(form.category) ? expenseCategories : [...expenseCategories, form.category]).map((c) => (
                     <option key={c} value={c}>{c}</option>
                   ))}
                 </select>

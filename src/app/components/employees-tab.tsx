@@ -66,8 +66,9 @@ export default function EmployeesTab({
     phone: "",
     nic: "",
     licenseNumber: "",
-    salaryType: "DAILY" as "DAILY" | "MONTHLY",
+    salaryType: "PER_TURN" as "PER_TURN" | "DAILY" | "MONTHLY",
     baseSalary: "",
+    fullTurnBonus: "0",
     busId: "",
     isActive: true,
     joinedDate: todayStr,
@@ -76,7 +77,7 @@ export default function EmployeesTab({
 
   // Bulk attendance draft state keyed by employeeId
   const [bulkDraft, setBulkDraft] = useState<
-    Record<string, { status: AttendanceStatus; busId: string; advanceTaken: string }>
+    Record<string, { status: AttendanceStatus; busId: string; turnsCompleted: string; advanceTaken: string }>
   >({});
 
   // Single attendance edit modal
@@ -89,6 +90,8 @@ export default function EmployeesTab({
     busId: "",
     date: todayStr,
     status: "PRESENT" as AttendanceStatus,
+    turnsCompleted: "2",
+    fullTurnBonus: "0",
     dailyWage: "0",
     advanceTaken: "0",
   });
@@ -228,40 +231,83 @@ export default function EmployeesTab({
     return m;
   }, [crewRoster, attendanceDate, employees]);
 
+  const getBusTurns = (busId: string) => {
+    if (!busId) return 2;
+    return buses.find((b) => b.id === busId)?.turnsPerDay ?? 2;
+  };
+
   const getDraftForEmployee = (emp: Employee) => {
     const draft = bulkDraft[emp.id];
     if (draft) return draft;
     const existing = dateAttendanceMap.get(emp.id);
     if (existing) {
+      const st = (existing.status ?? (existing.present ? "PRESENT" : "ABSENT")) as AttendanceStatus;
+      const bId = existing.busId || "";
+      const defTurns = st === "ABSENT" ? 0 : st === "HALF_DAY" ? getBusTurns(bId) / 2 : getBusTurns(bId);
       return {
-        status: (existing.status ?? (existing.present ? "PRESENT" : "ABSENT")) as AttendanceStatus,
-        busId: existing.busId || "",
+        status: st,
+        busId: bId,
+        turnsCompleted: String(existing.turnsCompleted ?? defTurns),
         advanceTaken: String(existing.advance || 0),
       };
     }
+    const bId = emp.busId || "";
     return {
       status: "PRESENT" as AttendanceStatus,
-      busId: emp.busId || "",
+      busId: bId,
+      turnsCompleted: String(getBusTurns(bId)),
       advanceTaken: "0",
     };
   };
 
   const setDraftField = (
     emp: Employee,
-    patch: Partial<{ status: AttendanceStatus; busId: string; advanceTaken: string }>
+    patch: Partial<{ status: AttendanceStatus; busId: string; turnsCompleted: string; advanceTaken: string }>
   ) => {
     const curr = getDraftForEmployee(emp);
+    const next = { ...curr, ...patch };
+    if (patch.status !== undefined && patch.turnsCompleted === undefined) {
+      const target = getBusTurns(next.busId);
+      next.turnsCompleted =
+        patch.status === "ABSENT" ? "0" : patch.status === "HALF_DAY" ? String(target / 2) : String(target);
+    } else if (patch.busId !== undefined && patch.turnsCompleted === undefined) {
+      const target = getBusTurns(patch.busId);
+      next.turnsCompleted =
+        next.status === "ABSENT" ? "0" : next.status === "HALF_DAY" ? String(target / 2) : String(target);
+    }
     setBulkDraft((prev) => ({
       ...prev,
-      [emp.id]: { ...curr, ...patch },
+      [emp.id]: next,
     }));
   };
 
+  const computePayPreview = (emp: Employee, status: AttendanceStatus, busId: string, turnsVal: number) => {
+    const targetTurns = getBusTurns(busId);
+    const turns = status === "ABSENT" ? 0 : Math.max(0, turnsVal);
+    const basePay =
+      emp.salaryType === "PER_TURN"
+        ? turns * emp.baseSalary
+        : emp.salaryType === "MONTHLY"
+        ? status === "PRESENT"
+          ? Math.round(emp.baseSalary / 30)
+          : status === "HALF_DAY"
+          ? Math.round(emp.baseSalary / 60)
+          : 0
+        : status === "PRESENT"
+        ? emp.baseSalary
+        : status === "HALF_DAY"
+        ? Math.round(emp.baseSalary / 2)
+        : 0;
+    const bonus =
+      (emp.fullTurnBonus ?? 0) > 0 && status !== "ABSENT" && turns >= targetTurns
+        ? emp.fullTurnBonus ?? 0
+        : 0;
+    return { basePay, bonus, totalPay: basePay + bonus, targetTurns };
+  };
+
   const computeDailyRate = (emp: Employee, status: AttendanceStatus) => {
-    const full = emp.salaryType === "MONTHLY" ? Math.round(emp.baseSalary / 30) : emp.baseSalary;
-    if (status === "PRESENT") return full;
-    if (status === "HALF_DAY") return Math.round(full / 2);
-    return 0;
+    const turns = getBusTurns(emp.busId || "");
+    return computePayPreview(emp, status, emp.busId || "", status === "PRESENT" ? turns : status === "HALF_DAY" ? turns / 2 : 0).totalPay;
   };
 
   // Employee CRUD handlers
@@ -281,8 +327,9 @@ export default function EmployeesTab({
       phone: "",
       nic: "",
       licenseNumber: "",
-      salaryType: "DAILY",
+      salaryType: "PER_TURN",
       baseSalary: "",
+      fullTurnBonus: "0",
       busId: "",
       isActive: true,
       joinedDate: todayStr,
@@ -303,6 +350,7 @@ export default function EmployeesTab({
       licenseNumber: emp.licenseNumber,
       salaryType: emp.salaryType,
       baseSalary: String(emp.baseSalary),
+      fullTurnBonus: String(emp.fullTurnBonus ?? 0),
       busId: emp.busId || "",
       isActive: emp.isActive,
       joinedDate: emp.joinedDate || todayStr,
@@ -323,6 +371,7 @@ export default function EmployeesTab({
       licenseNumber: empForm.licenseNumber,
       salaryType: empForm.salaryType,
       baseSalary: Number(empForm.baseSalary) || 0,
+      fullTurnBonus: Number(empForm.fullTurnBonus) || 0,
       busId: empForm.busId || undefined,
       isActive: empForm.isActive,
       joinedDate: empForm.joinedDate,
@@ -363,6 +412,7 @@ export default function EmployeesTab({
       licenseNumber: emp.licenseNumber,
       salaryType: emp.salaryType,
       baseSalary: emp.baseSalary,
+      fullTurnBonus: emp.fullTurnBonus ?? 0,
       busId: busId || undefined,
       isActive: emp.isActive,
       joinedDate: emp.joinedDate,
@@ -386,10 +436,13 @@ export default function EmployeesTab({
     setSaving(true);
     const entries = activeEmps.map((emp) => {
       const d = getDraftForEmployee(emp);
+      const st = markAllPresent ? ("PRESENT" as AttendanceStatus) : d.status;
+      const targetTurns = getBusTurns(d.busId);
       return {
         employeeId: emp.id,
-        status: markAllPresent ? ("PRESENT" as AttendanceStatus) : d.status,
+        status: st,
         busId: d.busId || undefined,
+        turnsCompleted: markAllPresent ? targetTurns : Number(d.turnsCompleted) || 0,
         advanceTaken: Number(d.advanceTaken) || 0,
       };
     });
@@ -418,6 +471,8 @@ export default function EmployeesTab({
       busId: c.busId || "",
       date: c.date || attendanceDate,
       status: (c.status ?? (c.present ? "PRESENT" : "ABSENT")) as AttendanceStatus,
+      turnsCompleted: String(c.turnsCompleted ?? 0),
+      fullTurnBonus: String(c.fullTurnBonus ?? 0),
       dailyWage: String(c.wage),
       advanceTaken: String(c.advance),
     });
@@ -436,6 +491,8 @@ export default function EmployeesTab({
       busId: first?.busId || "",
       date: attendanceDate,
       status: "PRESENT",
+      turnsCompleted: String(first ? getBusTurns(first.busId || "") : 2),
+      fullTurnBonus: String(first?.fullTurnBonus ?? 0),
       dailyWage: String(
         first ? computeDailyRate(first, "PRESENT") : 0
       ),
@@ -852,8 +909,17 @@ export default function EmployeesTab({
                         <td className="px-4 py-3">
                           <div className="font-medium text-white">{formatLKR(emp.baseSalary)}</div>
                           <div className="text-[10px] text-slate-400">
-                            {emp.salaryType === "DAILY" ? "Per Day" : "Per Month"}
+                            {emp.salaryType === "PER_TURN"
+                              ? "Per Turn"
+                              : emp.salaryType === "DAILY"
+                              ? "Per Day"
+                              : "Per Month"}
                           </div>
+                          {(emp.fullTurnBonus ?? 0) > 0 && (
+                            <div className="text-[10px] text-emerald-400">
+                              +{formatLKR(emp.fullTurnBonus)} full turns
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right text-slate-300">
                           {st.daysPresent}
@@ -955,11 +1021,12 @@ export default function EmployeesTab({
                 <table className="w-full text-left text-xs">
                   <thead className="border-b border-slate-800 text-slate-400">
                     <tr>
-                      <th className="py-2 pr-3">Employee</th>
+                      <th className="py-2 pr-3">Staff</th>
                       <th className="py-2 px-3">Bus</th>
                       <th className="py-2 px-3">Status</th>
-                      <th className="py-2 px-3 text-right">Wage (Rs.)</th>
-                      <th className="py-2 pl-3 text-right">Advance Taken (Rs.)</th>
+                      <th className="py-2 px-3 text-center">Turns Done</th>
+                      <th className="py-2 px-3 text-right">Total Pay (Rs.)</th>
+                      <th className="py-2 pl-3 text-right">Advance (Rs.)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
@@ -967,7 +1034,12 @@ export default function EmployeesTab({
                       .filter((e) => e.isActive)
                       .map((emp) => {
                         const d = getDraftForEmployee(emp);
-                        const wagePreview = computeDailyRate(emp, d.status);
+                        const pay = computePayPreview(
+                          emp,
+                          d.status,
+                          d.busId,
+                          Number(d.turnsCompleted) || 0
+                        );
                         const alreadyMarked = dateAttendanceMap.has(emp.id);
                         return (
                           <tr key={emp.id}>
@@ -991,7 +1063,7 @@ export default function EmployeesTab({
                                 <option value="">Unassigned</option>
                                 {buses.map((b) => (
                                   <option key={b.id} value={b.id}>
-                                    {b.regNumber}
+                                    {b.regNumber} ({b.turnsPerDay ?? 2}t)
                                   </option>
                                 ))}
                               </select>
@@ -1018,8 +1090,30 @@ export default function EmployeesTab({
                                 ))}
                               </div>
                             </td>
-                            <td className="py-2.5 px-3 text-right font-medium text-sky-400">
-                              {formatLKR(wagePreview)}
+                            <td className="py-2.5 px-3 text-center">
+                              <div className="inline-flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="20"
+                                  step="0.5"
+                                  disabled={d.status === "ABSENT"}
+                                  value={d.status === "ABSENT" ? "0" : d.turnsCompleted}
+                                  onChange={(e) =>
+                                    setDraftField(emp, { turnsCompleted: e.target.value })
+                                  }
+                                  className="w-16 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-center text-xs text-white disabled:opacity-40"
+                                />
+                                <span className="text-[10px] text-slate-400">/ {pay.targetTurns}</span>
+                              </div>
+                            </td>
+                            <td className="py-2.5 px-3 text-right">
+                              <div className="font-medium text-sky-400">{formatLKR(pay.totalPay)}</div>
+                              {pay.bonus > 0 && (
+                                <div className="text-[10px] text-emerald-400">
+                                  incl. +{formatLKR(pay.bonus)} full-turn
+                                </div>
+                              )}
                             </td>
                             <td className="py-2.5 pl-3 text-right">
                               <input
@@ -1336,25 +1430,28 @@ export default function EmployeesTab({
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-slate-400">Salary Type *</label>
+                  <label className="text-xs text-slate-400">Pay Type *</label>
                   <select
                     value={empForm.salaryType}
                     onChange={(e) =>
                       setEmpForm({
                         ...empForm,
-                        salaryType: e.target.value as "DAILY" | "MONTHLY",
+                        salaryType: e.target.value as "PER_TURN" | "DAILY" | "MONTHLY",
                       })
                     }
                     className={inputCls}
                   >
-                    <option value="DAILY">Daily Wage</option>
-                    <option value="MONTHLY">Monthly Fixed Salary</option>
+                    <option value="PER_TURN">Per Turn</option>
+                    <option value="DAILY">Daily Pay</option>
+                    <option value="MONTHLY">Monthly Salary</option>
                   </select>
                 </div>
                 <div>
                   <label className="text-xs text-slate-400">
-                    {empForm.salaryType === "DAILY"
-                      ? "Daily Wage (Rs.) *"
+                    {empForm.salaryType === "PER_TURN"
+                      ? "Pay Per Turn (Rs.) *"
+                      : empForm.salaryType === "DAILY"
+                      ? "Daily Pay (Rs.) *"
                       : "Monthly Salary (Rs.) *"}
                   </label>
                   <input
@@ -1365,8 +1462,24 @@ export default function EmployeesTab({
                     value={empForm.baseSalary}
                     onChange={(e) => setEmpForm({ ...empForm, baseSalary: e.target.value })}
                     className={inputCls}
+                    placeholder="e.g. 1500"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-400">
+                  Full-Turn Commission / Bonus (Rs., optional)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="50"
+                  value={empForm.fullTurnBonus}
+                  onChange={(e) => setEmpForm({ ...empForm, fullTurnBonus: e.target.value })}
+                  className={inputCls}
+                  placeholder="0 (extra pay when all turns for the day are completed)"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

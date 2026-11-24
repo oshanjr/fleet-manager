@@ -18,6 +18,7 @@ enum CrewRole {
 }
 
 enum SalaryType {
+  PER_TURN
   DAILY
   MONTHLY
 }
@@ -45,6 +46,7 @@ model BusVehicle {
   registrationNumber String   @unique
   routeName          String
   seatingCapacity    Int
+  turnsPerDay        Int      @default(2)
   isActive           Boolean  @default(true)
 
   // Statutory document expiry dates (Sri Lanka)
@@ -116,8 +118,9 @@ model Employee {
   phone         String?
   nic           String?
   licenseNumber String?
-  salaryType    SalaryType @default(DAILY)
+  salaryType    SalaryType @default(PER_TURN)
   baseSalary    Float
+  fullTurnBonus Float      @default(0)
   busId         String?    @db.ObjectId
   isActive      Boolean    @default(true)
   joinedDate    DateTime   @default(now())
@@ -139,8 +142,10 @@ model CrewAttendancePayroll {
   employeeId   String?          @db.ObjectId
   employeeName String
   role         CrewRole
-  status       AttendanceStatus @default(PRESENT)
-  dailyWage    Float
+  status         AttendanceStatus @default(PRESENT)
+  turnsCompleted Float            @default(0)
+  fullTurnBonus  Float            @default(0)
+  dailyWage      Float
   advanceTaken Float            @default(0)
   balanceOwed  Float            @default(0)
   busId        String?          @db.ObjectId

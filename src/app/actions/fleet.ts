@@ -232,6 +232,7 @@ export async function getFleetDataAction() {
           regNumber: b.registrationNumber,
           route: b.routeName,
           capacity: b.seatingCapacity,
+          turnsPerDay: b.turnsPerDay ?? 2,
           status: (b.isActive ? "ACTIVE" : "MAINTENANCE") as "ACTIVE" | "MAINTENANCE",
           isActive: b.isActive,
           insuranceExpiry: dayStr(b.insuranceExpiry),
@@ -283,6 +284,8 @@ export async function getFleetDataAction() {
           balance: c.balanceOwed,
           date: dayStr(c.date),
           status: c.status,
+          turnsCompleted: c.turnsCompleted ?? 0,
+          fullTurnBonus: c.fullTurnBonus ?? 0,
           present: c.status !== "ABSENT",
         })),
         employees: employees.map((e) => ({
@@ -294,6 +297,7 @@ export async function getFleetDataAction() {
           licenseNumber: e.licenseNumber ?? "",
           salaryType: e.salaryType,
           baseSalary: e.baseSalary,
+          fullTurnBonus: e.fullTurnBonus ?? 0,
           busId: e.busId,
           assignedBus: e.bus ? e.bus.registrationNumber : "Unassigned",
           isActive: e.isActive,
@@ -347,6 +351,7 @@ export interface BusInput {
   regNumber: string;
   routeName: string;
   seatingCapacity: number;
+  turnsPerDay?: number;
   isActive?: boolean;
   insuranceExpiry?: string;
   revenueLicenseExpiry?: string;
@@ -362,10 +367,12 @@ function busData(input: BusInput) {
   if (!route) throw new Error("Route is required.");
   const seats = Math.round(num(input.seatingCapacity));
   if (seats < 1 || seats > 120) throw new Error("Seating capacity must be between 1 and 120.");
+  const turnsPerDay = input.turnsPerDay !== undefined ? Math.max(1, Math.round(num(input.turnsPerDay))) : 2;
   return {
     registrationNumber: reg,
     routeName: route,
     seatingCapacity: seats,
+    turnsPerDay,
     isActive: input.isActive ?? true,
     insuranceExpiry: toOptionalDayDate(input.insuranceExpiry),
     revenueLicenseExpiry: toOptionalDayDate(input.revenueLicenseExpiry),
@@ -581,6 +588,8 @@ export interface CrewInput {
   busId?: string;
   date: string;
   status?: "PRESENT" | "HALF_DAY" | "ABSENT";
+  turnsCompleted?: number;
+  fullTurnBonus?: number;
 }
 
 function crewData(input: CrewInput) {
@@ -593,6 +602,8 @@ function crewData(input: CrewInput) {
   }
   const wage = num(input.dailyWage);
   const advance = num(input.advanceTaken);
+  const turnsCompleted = Math.max(0, num(input.turnsCompleted));
+  const fullTurnBonus = Math.max(0, num(input.fullTurnBonus));
   if (wage < 0 || advance < 0) throw new Error("Wage and advance cannot be negative.");
   return {
     employeeId: input.employeeId ? input.employeeId : null,
@@ -604,6 +615,8 @@ function crewData(input: CrewInput) {
     busId: input.busId ? input.busId : null,
     date: toDayDate(input.date),
     status,
+    turnsCompleted,
+    fullTurnBonus,
   };
 }
 
@@ -704,8 +717,9 @@ export interface EmployeeInput {
   phone?: string;
   nic?: string;
   licenseNumber?: string;
-  salaryType: "DAILY" | "MONTHLY";
+  salaryType: "PER_TURN" | "DAILY" | "MONTHLY";
   baseSalary: number;
+  fullTurnBonus?: number;
   busId?: string;
   isActive?: boolean;
   joinedDate?: string;
@@ -716,10 +730,11 @@ function employeeData(input: EmployeeInput) {
   const name = (input.name || "").trim();
   if (!name) throw new Error("Employee name is required.");
   if (input.role !== "DRIVER" && input.role !== "CONDUCTOR") throw new Error("Invalid employee role.");
-  if (input.salaryType !== "DAILY" && input.salaryType !== "MONTHLY") {
+  if (input.salaryType !== "PER_TURN" && input.salaryType !== "DAILY" && input.salaryType !== "MONTHLY") {
     throw new Error("Invalid salary type.");
   }
   const baseSalary = num(input.baseSalary);
+  const fullTurnBonus = Math.max(0, num(input.fullTurnBonus));
   if (baseSalary < 0) throw new Error("Base salary / wage cannot be negative.");
   return {
     name,
@@ -729,6 +744,7 @@ function employeeData(input: EmployeeInput) {
     licenseNumber: optStr(input.licenseNumber),
     salaryType: input.salaryType,
     baseSalary,
+    fullTurnBonus,
     busId: input.busId ? input.busId : null,
     isActive: input.isActive !== false,
     joinedDate: toDayDate(input.joinedDate),
@@ -776,14 +792,17 @@ export interface BulkAttendanceEntry {
   employeeId: string;
   status: "PRESENT" | "HALF_DAY" | "ABSENT";
   busId?: string;
+  turnsCompleted?: number;
   advanceTaken?: number;
 }
 
 /**
  * Marks or updates attendance for multiple employees on a given date.
- * Automatically calculates daily wage from employee's salary settings:
+ * Automatically calculates pay from employee's salary settings:
+ * - PER_TURN: turnsCompleted * baseSalary
  * - DAILY: 1x baseSalary (PRESENT), 0.5x (HALF_DAY), 0 (ABSENT)
  * - MONTHLY: round(baseSalary / 30) (PRESENT), round(baseSalary / 60) (HALF_DAY), 0 (ABSENT)
+ * Plus optional fullTurnBonus when turnsCompleted >= bus.turnsPerDay (and not ABSENT).
  */
 export async function markBulkAttendanceAction(
   dateStr: string,
@@ -795,14 +814,13 @@ export async function markBulkAttendanceAction(
     const empIds = entries.map((e) => e.employeeId).filter(Boolean);
     if (!empIds.length) return { success: true, data: { created: 0, updated: 0 } };
 
-    const employees = await prisma.employee.findMany({
-      where: { id: { in: empIds } },
-    });
+    const [employees, allBuses, existing] = await Promise.all([
+      prisma.employee.findMany({ where: { id: { in: empIds } } }),
+      prisma.busVehicle.findMany({ select: { id: true, turnsPerDay: true } }),
+      prisma.crewAttendancePayroll.findMany({ where: { date: target } }),
+    ]);
     const empMap = new Map(employees.map((e) => [e.id, e]));
-
-    const existing = await prisma.crewAttendancePayroll.findMany({
-      where: { date: target },
-    });
+    const busTurnsMap = new Map(allBuses.map((b) => [b.id, b.turnsPerDay ?? 2]));
     const byEmpId = new Map<string, (typeof existing)[number]>();
     const byName = new Map<string, (typeof existing)[number]>();
     for (const r of existing) {
@@ -817,17 +835,42 @@ export async function markBulkAttendanceAction(
       const emp = empMap.get(entry.employeeId);
       if (!emp) continue;
 
-      const fullDaily =
-        emp.salaryType === "MONTHLY" ? Math.round(emp.baseSalary / 30) : emp.baseSalary;
-      const wage =
-        entry.status === "PRESENT"
-          ? fullDaily
+      const busId = entry.busId !== undefined ? (entry.busId || null) : emp.busId;
+      const targetTurns = busId ? (busTurnsMap.get(busId) ?? 2) : 2;
+      const turnsCompleted =
+        entry.status === "ABSENT"
+          ? 0
+          : entry.turnsCompleted !== undefined
+          ? Math.max(0, num(entry.turnsCompleted))
+          : entry.status === "PRESENT"
+          ? targetTurns
+          : targetTurns / 2;
+
+      const basePay =
+        emp.salaryType === "PER_TURN"
+          ? turnsCompleted * emp.baseSalary
+          : emp.salaryType === "MONTHLY"
+          ? entry.status === "PRESENT"
+            ? Math.round(emp.baseSalary / 30)
+            : entry.status === "HALF_DAY"
+            ? Math.round(emp.baseSalary / 60)
+            : 0
+          : entry.status === "PRESENT"
+          ? emp.baseSalary
           : entry.status === "HALF_DAY"
-          ? Math.round(fullDaily / 2)
+          ? Math.round(emp.baseSalary / 2)
           : 0;
+
+      const appliedBonus =
+        (emp.fullTurnBonus ?? 0) > 0 &&
+        entry.status !== "ABSENT" &&
+        turnsCompleted >= targetTurns
+          ? emp.fullTurnBonus
+          : 0;
+
+      const wage = Number((basePay + appliedBonus).toFixed(2));
       const advance = Math.max(0, num(entry.advanceTaken));
       const balanceOwed = Number((wage - advance).toFixed(2));
-      const busId = entry.busId !== undefined ? (entry.busId || null) : emp.busId;
 
       const prev = byEmpId.get(emp.id) ?? byName.get(emp.name);
       if (prev) {
@@ -842,6 +885,8 @@ export async function markBulkAttendanceAction(
             balanceOwed,
             busId,
             status: entry.status,
+            turnsCompleted,
+            fullTurnBonus: appliedBonus,
           },
         });
         updated++;
@@ -857,6 +902,8 @@ export async function markBulkAttendanceAction(
             busId,
             date: target,
             status: entry.status,
+            turnsCompleted,
+            fullTurnBonus: appliedBonus,
           },
         });
         created++;

@@ -8,6 +8,7 @@ export interface Bus {
   regNumber: string;
   route: string;
   capacity: number;
+  turnsPerDay?: number;
   status: "ACTIVE" | "MAINTENANCE" | "IDLE";
   isActive?: boolean;
   insuranceExpiry?: string;
@@ -63,6 +64,8 @@ export interface CrewMember {
   date?: string;
   present: boolean;
   status?: "PRESENT" | "HALF_DAY" | "ABSENT";
+  turnsCompleted?: number;
+  fullTurnBonus?: number;
 }
 
 export interface Employee {
@@ -72,8 +75,9 @@ export interface Employee {
   phone: string;
   nic: string;
   licenseNumber: string;
-  salaryType: "DAILY" | "MONTHLY";
+  salaryType: "PER_TURN" | "DAILY" | "MONTHLY";
   baseSalary: number;
+  fullTurnBonus?: number;
   busId: string | null;
   assignedBus: string;
   isActive: boolean;

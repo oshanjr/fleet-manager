@@ -500,6 +500,7 @@ export default function FleetDashboardClient({
   const [busReg, setBusReg] = useState("");
   const [busRoute, setBusRoute] = useState("");
   const [busCapacity, setBusCapacity] = useState(54);
+  const [busTurnsPerDay, setBusTurnsPerDay] = useState(2);
   const [busActive, setBusActive] = useState(true);
   const [busDocs, setBusDocs] = useState({
     insuranceExpiry: "",
@@ -515,6 +516,7 @@ export default function FleetDashboardClient({
     setBusReg("");
     setBusRoute("");
     setBusCapacity(54);
+    setBusTurnsPerDay(2);
     setBusActive(true);
     setBusDocs({
       insuranceExpiry: "",
@@ -531,6 +533,7 @@ export default function FleetDashboardClient({
     setBusReg(bus.regNumber);
     setBusRoute(bus.route);
     setBusCapacity(bus.capacity);
+    setBusTurnsPerDay(bus.turnsPerDay ?? 2);
     setBusActive(bus.status === "ACTIVE");
     setBusDocs({
       insuranceExpiry: bus.insuranceExpiry || "",
@@ -551,6 +554,7 @@ export default function FleetDashboardClient({
         regNumber: busReg,
         routeName: busRoute,
         seatingCapacity: busCapacity,
+        turnsPerDay: busTurnsPerDay,
         isActive: busActive,
         ...busDocs,
       };
@@ -2138,6 +2142,7 @@ export default function FleetDashboardClient({
                     <th className="py-3 px-4">Reg Number</th>
                     <th className="py-3 px-4">Route Assignment</th>
                     <th className="py-3 px-4">Seats</th>
+                    <th className="py-3 px-4">Turns/Day</th>
                     <th className="py-3 px-4">Status</th>
                     <th className="py-3 px-3">Insurance</th>
                     <th className="py-3 px-3">Rev. Licence</th>
@@ -2153,6 +2158,7 @@ export default function FleetDashboardClient({
                       <td className="py-3.5 px-4 font-mono font-bold text-amber-400">{bus.regNumber}</td>
                       <td className="py-3.5 px-4 font-medium">{bus.route}</td>
                       <td className="py-3.5 px-4">{bus.capacity}</td>
+                      <td className="py-3.5 px-4 font-mono text-amber-300">{bus.turnsPerDay ?? 2}</td>
                       <td className="py-3.5 px-4">
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
@@ -2228,16 +2234,30 @@ export default function FleetDashboardClient({
                         />
                       </div>
                     </div>
-                    <div>
-                      <label className="text-xs font-semibold text-slate-300">Assigned Route</label>
-                      <input
-                        type="text"
-                        required
-                        value={busRoute}
-                        onChange={(e) => setBusRoute(e.target.value)}
-                        placeholder="Route 138 (Pettah - Homagama)"
-                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
-                      />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Route</label>
+                        <input
+                          type="text"
+                          required
+                          value={busRoute}
+                          onChange={(e) => setBusRoute(e.target.value)}
+                          placeholder="Route 138 (Pettah - Homagama)"
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-semibold text-slate-300">Turns Per Day</label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="20"
+                          required
+                          value={busTurnsPerDay}
+                          onChange={(e) => setBusTurnsPerDay(Math.max(1, Number(e.target.value)))}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus:border-amber-500 focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     <div className="pt-2 border-t border-slate-800">
